@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net5.0</TargetFramework>
+		<PublishWithAspNetCoreTargetManifest>true</PublishWithAspNetCoreTargetManifest>
+		<TargetLatestRuntimePatch>false</TargetLatestRuntimePatch>
+		<RuntimeIdentifiers>win-x86;win-x64;linux-x64</RuntimeIdentifiers>
+		<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>
+		<UserSecretsId>bde54689-9817-4bef-b7be-9f0006e12243</UserSecretsId>
+		<PackageId>Qcn.Qrame.Web.FileServer</PackageId>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<Authors>qcncokr</Authors>
+		<Company>qcn</Company>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="5.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="5.0.1" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="5.0.1" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.8.3" />
+		<PackageReference Include="CacheManager.Core" Version="1.2.0" />
+		<PackageReference Include="LiteDB" Version="4.1.4" />
+		<PackageReference Include="MessagePack" Version="2.2.85" />
+		<PackageReference Include="MessagePack.AspNetCoreMvcFormatter" Version="2.2.85" />
+		<PackageReference Include="Qcn.Qrame.Core" Version="1.0.0" />
+		<PackageReference Include="Qcn.Qrame.Core.Library" Version="1.0.1" />
+		<PackageReference Include="Serilog" Version="2.10.0" />
+		<PackageReference Include="Serilog.AspNetCore" Version="4.1.0" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="3.0.1" />
+		<PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
+		<PackageReference Include="Serilog.Sinks.File" Version="4.1.0" />
+		<PackageReference Include="System.Drawing.Common" Version="5.0.2" />
+		<PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.10.9" />
+	</ItemGroup>
+
+    <ItemGroup>
+        <None Include="wwwroot\**" />
+        <Content Remove="wwwroot\lib\filedrop\demo\demo.html" />
+        <Content Remove="wwwroot\MSPWBPDP1\index - 복사.html" />
+        <Content Remove="wwwroot\MSPWBPDP1\index.html" />
+        <None Update="wwwroot\**">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+</Project>

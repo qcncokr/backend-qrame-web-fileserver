@@ -1,0 +1,40 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<title></title>
+</head>
+<body>
+	<script src="/lib/msgpack/msgpack.min.js"></script>
+	<script>
+		var sourceData = {
+			number: 123,
+			number2: -0.129,
+			text: 'Abc with Üñıçôðé and ユニコード',
+			flag: true,
+			list: [1, 2, 3],
+			obj: { a: 1, b: '2', c: false, d: { a: 0, b: -1 } },
+			time: Date.now()
+		};
+
+		var bytes = msgpack.serialize(sourceData);
+
+		var deserializedData = msgpack.deserialize(bytes);
+
+		var oReq = new XMLHttpRequest();
+		oReq.open('POST', '/WeatherForecast', true);
+		oReq.responseType = 'arraybuffer';
+
+		oReq.onload = function (oEvent) {
+			var arrayBuffer = oReq.response;
+			if (arrayBuffer) {
+				var byteArray = new Uint8Array(arrayBuffer);
+				var obj = msgpack.deserialize(byteArray);
+				console.log(JSON.stringify(obj));
+			}
+		};
+
+		oReq.send(null);
+	</script>
+</body>
+</html>
