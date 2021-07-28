@@ -8,20 +8,22 @@ namespace Qrame.Web.FileServer.Message
 	[DataContract]
 	public class DownloadRequest
 	{
+		[Key(nameof(RepositoryID))]
+		[DataMember]
+		public string RepositoryID;
+
 		[Key(nameof(ItemID))]
 		[DataMember]
 		public string ItemID;
 
-		[Key(nameof(FileMD5))]
+		[Key(nameof(BusinessID))]
+		[DataMember]
+		public string BusinessID;
+
 		[DataMember]
 		public string FileMD5;
 
-		[Key(nameof(TokenID))]
 		[DataMember]
 		public string TokenID;
-
-		[Key(nameof(RepositoryID))]
-		[DataMember]
-		public string RepositoryID;
 	}
 }

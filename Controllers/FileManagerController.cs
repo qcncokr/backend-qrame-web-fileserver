@@ -46,7 +46,7 @@ namespace Qrame.Web.FileServer.Controllers
 			this.configuration = configuration;
 		}
 
-		// http://localhost:7004/api/FileManager/GetToken?remoteIP=localhost
+		// http://localhost:8004/api/FileManager/GetToken?remoteIP=localhost
 		[HttpGet("GetToken")]
 		public string GetToken(string remoteIP)
 		{
@@ -66,14 +66,14 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/RequestIP
+		// http://localhost:8004/api/FileManager/RequestIP
 		[HttpGet("RequestIP")]
 		public string GetClientIP()
 		{
 			return HttpContext.Features.Get<IHttpConnectionFeature>()?.RemoteIpAddress?.ToString();
 		}
 
-		// http://localhost:7004/api/FileManager/ActionHandler
+		// http://localhost:8004/api/FileManager/ActionHandler
 		[HttpGet("ActionHandler")]
 		public async Task<ActionResult> ActionHandler()
 		{
@@ -82,21 +82,21 @@ namespace Qrame.Web.FileServer.Controllers
 			JsonContentResult jsonContentResult = new JsonContentResult();
 			jsonContentResult.Result = false;
 
-			string action = Request.Query["action"].ToString();
+			string action = Request.Query["Action"].ToString();
 
 			switch (action.ToUpper())
 			{
 				case "GETITEM":
-					result = await GetItem(result, jsonContentResult);
+					result = await GetItem(jsonContentResult);
 					break;
 				case "GETITEMS":
-					result = await GetItems(result, jsonContentResult);
+					result = await GetItems(jsonContentResult);
 					break;
 				case "UPDATEDEPENDENCYID":
-					result = await UpdateDependencyID(result, jsonContentResult);
+					result = await UpdateDependencyID(jsonContentResult);
 					break;
 				case "UPDATEFILENAME":
-					result = await UpdateFileName(result, jsonContentResult);
+					result = await UpdateFileName(jsonContentResult);
 					break;
 			}
 
@@ -107,11 +107,13 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		private async Task<ActionResult> UpdateDependencyID(ActionResult result, JsonContentResult jsonContentResult)
+		private async Task<ActionResult> UpdateDependencyID(JsonContentResult jsonContentResult)
 		{
-			string repositoryID = Request.Query["repositoryID"].ToString();
-			string sourceDependencyID = Request.Query["sourceDependencyID"].ToString();
-			string targetDependencyID = Request.Query["targetDependencyID"].ToString();
+			ActionResult result = null;
+			string repositoryID = Request.Query["RepositoryID"].ToString();
+			string sourceDependencyID = Request.Query["SourceDependencyID"].ToString();
+			string targetDependencyID = Request.Query["TargetDependencyID"].ToString();
+			string businessID = string.IsNullOrEmpty(Request.Query["BusinessID"]) == true ? "" : Request.Query["BusinessID"].ToString();
 
 			if (string.IsNullOrEmpty(repositoryID) == true || string.IsNullOrEmpty(sourceDependencyID) == true || string.IsNullOrEmpty(targetDependencyID) == true)
 			{
@@ -131,13 +133,13 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			List<RepositoryItems> items = null;
-			if (StaticConfig.IsLocalDB == true)
+			if (StaticConfig.IsLocalTransactionDB == true)
 			{
-				items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == sourceDependencyID).ToList();
+				items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == sourceDependencyID && p.BusinessID == businessID);
 			}
 			else
 			{
-				items = await businessApiClient.GetRepositoryItems(repositoryID, sourceDependencyID);
+				items = await businessApiClient.GetRepositoryItems(repositoryID, sourceDependencyID, businessID);
 			}
 
 			bool isDataUpsert = false;
@@ -147,7 +149,7 @@ namespace Qrame.Web.FileServer.Controllers
 				{
 					RepositoryItems item = items[i];
 
-					if (StaticConfig.IsLocalDB == true)
+					if (StaticConfig.IsLocalTransactionDB == true)
 					{
 						isDataUpsert = liteDBClient.Update<RepositoryItems>(item);
 					}
@@ -179,11 +181,14 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		private async Task<ActionResult> UpdateFileName(ActionResult result, JsonContentResult jsonContentResult)
+		// ItemID, FileName이 동일하게 관리되는 Profile 업로드 타입을 위한 기능 UD02 거래에서 변경 관리할 것인지 확인 필요
+		private async Task<ActionResult> UpdateFileName(JsonContentResult jsonContentResult)
 		{
-			string repositoryID = Request.Query["repositoryID"].ToString();
-			string itemID = Request.Query["itemID"].ToString();
-			string changeFileName = Request.Query["fileName"].ToString();
+			ActionResult result = null;
+			string repositoryID = Request.Query["RepositoryID"].ToString();
+			string itemID = Request.Query["ItemID"].ToString();
+			string changeFileName = Request.Query["FileName"].ToString();
+			string businessID = string.IsNullOrEmpty(Request.Query["BusinessID"]) == true ? "" : Request.Query["BusinessID"].ToString();
 
 			if (string.IsNullOrEmpty(repositoryID) == true || string.IsNullOrEmpty(itemID) == true || string.IsNullOrEmpty(changeFileName) == true)
 			{
@@ -203,18 +208,25 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			RepositoryItems item = null;
-			if (StaticConfig.IsLocalDB == true)
+			if (StaticConfig.IsLocalTransactionDB == true)
 			{
-				item = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID).FirstOrDefault();
+				item = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID && p.BusinessID == businessID).FirstOrDefault();
 			}
 			else
 			{
-				item = await businessApiClient.GetRepositoryItem(repositoryID, itemID);
+				item = await businessApiClient.GetRepositoryItem(repositoryID, itemID, businessID);
 			}
 
 			bool isDataUpsert = false;
 			if (item != null)
 			{
+				if (item.FileName.Trim() == changeFileName.Trim())
+				{
+					jsonContentResult.Message = "동일한 파일명으로 변경 불가";
+					logger.Warning("[{LogCategory}] " + jsonContentResult.Message, "FileManagerController/UpdateFileName");
+					return result;
+				}
+
 				string customPath1 = item.CustomPath1;
 				string customPath2 = item.CustomPath2;
 				string customPath3 = item.CustomPath3;
@@ -228,13 +240,12 @@ namespace Qrame.Web.FileServer.Controllers
 				}
 
 				RepositoryManager repositoryManager = new RepositoryManager();
-				repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, customPath1, customPath2, customPath3);
-				string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, customPath1, customPath2, customPath3);
+				repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, businessID, customPath1, customPath2, customPath3);
+				string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, businessID, customPath1, customPath2, customPath3);
 				string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 				relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 				string policyPath = repositoryManager.GetPolicyPath(repository);
 
-				string newItemID = repository.IsFileNameEncrypt.ParseBool() == true ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : changeFileName;
 				bool isExistFile = false;
 				// 파일명 변경
 				switch (repository.StorageType)
@@ -264,7 +275,7 @@ namespace Qrame.Web.FileServer.Controllers
 									ContentType = properties.ContentType
 								};
 
-								string newBlobID = relativeDirectoryUrlPath + newItemID;
+								string newBlobID = relativeDirectoryUrlPath + changeFileName;
 								BlobClient newBlob = container.GetBlobClient(newBlobID);
 								await newBlob.UploadAsync(blobDownloadInfo.Content, headers);
 								await container.DeleteBlobIfExistsAsync(blobID);
@@ -287,12 +298,13 @@ namespace Qrame.Web.FileServer.Controllers
 				}
 
 				string backupItemID = item.ItemID;
-				item.ItemID = newItemID;
+				item.ItemID = changeFileName;
+				item.PhysicalPath = item.PhysicalPath.Replace(item.FileName, changeFileName);
 				item.RelativePath = item.RelativePath.Replace(item.FileName, changeFileName);
 				item.AbsolutePath = item.AbsolutePath.Replace(item.FileName, changeFileName);
 				item.FileName = changeFileName;
 
-				if (StaticConfig.IsLocalDB == true)
+				if (StaticConfig.IsLocalTransactionDB == true)
 				{
 					isDataUpsert = liteDBClient.Upsert<RepositoryItems>(item);
 
@@ -328,10 +340,12 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		private async Task<ActionResult> GetItem(ActionResult result, JsonContentResult jsonContentResult)
+		private async Task<ActionResult> GetItem(JsonContentResult jsonContentResult)
 		{
-			string repositoryID = Request.Query["repositoryID"].ToString();
-			string itemID = Request.Query["itemID"].ToString();
+			ActionResult result = null;
+			string repositoryID = Request.Query["RepositoryID"].ToString();
+			string itemID = Request.Query["ItemID"].ToString();
+			string businessID = string.IsNullOrEmpty(Request.Query["BusinessID"]) == true ? "" : Request.Query["BusinessID"].ToString();
 
 			if (string.IsNullOrEmpty(repositoryID) == true || string.IsNullOrEmpty(itemID) == true)
 			{
@@ -350,13 +364,13 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			RepositoryItems item = null;
-			if (StaticConfig.IsLocalDB == true)
+			if (StaticConfig.IsLocalTransactionDB == true)
 			{
-				item = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID).FirstOrDefault();
+				item = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID && p.BusinessID == businessID).FirstOrDefault();
 			}
 			else
 			{
-				item = await businessApiClient.GetRepositoryItem(repositoryID, itemID);
+				item = await businessApiClient.GetRepositoryItem(repositoryID, itemID, businessID);
 			}
 
 			if (item != null)
@@ -393,10 +407,12 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		private async Task<ActionResult> GetItems(ActionResult result, JsonContentResult jsonContentResult)
+		private async Task<ActionResult> GetItems(JsonContentResult jsonContentResult)
 		{
-			string repositoryID = Request.Query["repositoryID"].ToString();
-			string dependencyID = Request.Query["dependencyID"].ToString();
+			ActionResult result = null;
+			string repositoryID = Request.Query["RepositoryID"].ToString();
+			string dependencyID = Request.Query["DependencyID"].ToString();
+			string businessID = string.IsNullOrEmpty(Request.Query["BusinessID"]) == true ? "" : Request.Query["BusinessID"].ToString();
 
 			if (string.IsNullOrEmpty(repositoryID) == true || string.IsNullOrEmpty(dependencyID) == true)
 			{
@@ -415,13 +431,13 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			List<RepositoryItems> items = null;
-			if (StaticConfig.IsLocalDB == true)
+			if (StaticConfig.IsLocalTransactionDB == true)
 			{
-				items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+				items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
 			}
 			else
 			{
-				items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
+				items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
 			}
 
 			List<dynamic> entitys = new List<dynamic>();
@@ -462,7 +478,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/RepositoryRefresh
+		// http://localhost:8004/api/FileManager/RepositoryRefresh
 		[HttpGet("RepositoryRefresh")]
 		public async Task<ContentResult> RepositoryRefresh()
 		{
@@ -470,7 +486,7 @@ namespace Qrame.Web.FileServer.Controllers
 
 			try
 			{
-				if (StaticConfig.IsLocalDB == true)
+				if (StaticConfig.IsLocalTransactionDB == true)
 				{
 					LiteDBClient liteDBClient = new LiteDBClient(logger, configuration);
 					liteDBClient.Delete<Repository>();
@@ -495,7 +511,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return Content(result, "application/json", Encoding.UTF8);
 		}
 
-		// http://localhost:7004/api/FileManager/GetRepository
+		// http://localhost:8004/api/FileManager/GetRepository
 		[HttpGet("GetRepository")]
 		public ContentResult GetRepository(string repositoryID)
 		{
@@ -516,7 +532,7 @@ namespace Qrame.Web.FileServer.Controllers
 						IsMultiUpload = repository.IsMultiUpload,
 						IsAutoPath = repository.IsAutoPath,
 						PolicyPathID = repository.PolicyPathID,
-						UploadType = repository.UploadType,
+						UploadType = repository.UploadTypeID,
 						UploadExtensions = repository.UploadExtensions,
 						UploadCount = repository.UploadCount,
 						UploadSizeLimit = repository.UploadSizeLimit
@@ -528,7 +544,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return Content(result, "application/json", Encoding.UTF8);
 		}
 
-		// http://localhost:7004/api/FileManager/UploadFile
+		// http://localhost:8004/api/FileManager/UploadFile
 		[HttpPost("UploadFile")]
 		public async Task<ContentResult> UploadFile([FromForm] IFormFile file)
 		{
@@ -557,7 +573,8 @@ namespace Qrame.Web.FileServer.Controllers
 			string customPath1 = string.IsNullOrEmpty(Request.Query["CustomPath1"]) == true ? "" : Request.Query["CustomPath1"].ToString();
 			string customPath2 = string.IsNullOrEmpty(Request.Query["CustomPath2"]) == true ? "" : Request.Query["CustomPath2"].ToString();
 			string customPath3 = string.IsNullOrEmpty(Request.Query["CustomPath3"]) == true ? "" : Request.Query["CustomPath3"].ToString();
-			string userID = string.IsNullOrEmpty(Request.Query["UserID"]) == true ? "system" : Request.Query["UserID"].ToString();
+			string userID = string.IsNullOrEmpty(Request.Query["UserID"]) == true ? "" : Request.Query["UserID"].ToString();
+			string businessID = string.IsNullOrEmpty(Request.Query["BusinessID"]) == true ? "" : Request.Query["BusinessID"].ToString();
 
 			RepositoryItems repositoryItem = null;
 
@@ -566,6 +583,7 @@ namespace Qrame.Web.FileServer.Controllers
 				if (file == null)
 				{
 					result.Message = "업로드 파일 정보 없음";
+					return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 				}
 				else
 				{
@@ -580,89 +598,102 @@ namespace Qrame.Web.FileServer.Controllers
 						}
 
 						RepositoryManager repositoryManager = new RepositoryManager();
-						repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, customPath1, customPath2, customPath3);
-						string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, customPath1, customPath2, customPath3);
+						repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, businessID, customPath1, customPath2, customPath3);
+						string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, businessID, customPath1, customPath2, customPath3);
 						string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 						relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 
 						if (repository.IsMultiUpload.ParseBool() == true) {
 							List<RepositoryItems> items = null;
-							if (StaticConfig.IsLocalDB == true)
-							{
-								items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+
+							if (repository.IsFileUploadDownloadOnly.ParseBool() == true){
+								result.RemainingCount = repository.UploadCount;
 							}
 							else
 							{
-								items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
-							}
-
-							if (items != null && items.Count() > 0)
-							{
-								if (items.Count >= repository.UploadCount)
+								if (StaticConfig.IsLocalTransactionDB == true)
 								{
-									result.Message = repository.UploadCount.ToCurrencyString() + " 파일 갯수 이상 업로드 할 수 없습니다";
-									return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
+									items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
 								}
-							}
+								else
+								{
+									items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
+								}
 
-							result.RemainingCount = repository.UploadCount - (items.Count + 1);
+								if (items != null && items.Count() > 0)
+								{
+									if (items.Count >= repository.UploadCount)
+									{
+										result.Message = repository.UploadCount.ToCurrencyString() + " 파일 갯수 이상 업로드 할 수 없습니다";
+										return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
+									}
+								}
+
+								result.RemainingCount = repository.UploadCount - (items.Count + 1);
+							}
 						}
 						else
 						{
 							List<RepositoryItems> items = null;
-							if (StaticConfig.IsLocalDB == true)
+							if (repository.IsFileUploadDownloadOnly.ParseBool() == true)
 							{
-								items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+								result.RemainingCount = repository.UploadCount;
 							}
 							else
 							{
-								items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
-							}
-
-							if (items != null && items.Count() > 0)
-							{
-								BlobContainerClient container = null;
-								bool hasContainer = false;
-								if (repository.StorageType == "AzureBlob")
+								if (StaticConfig.IsLocalTransactionDB == true)
 								{
-									container = new BlobContainerClient(repository.AzureBlobConnectionString, repository.AzureBlobContainerID.ToLower());
-									hasContainer = await container.ExistsAsync();
+									items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
+								}
+								else
+								{
+									items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
 								}
 
-								foreach (RepositoryItems item in items)
+								if (items != null && items.Count() > 0)
 								{
-									string deleteFileName;
-									if (repository.IsFileNameEncrypt.ParseBool() == true)
+									BlobContainerClient container = null;
+									bool hasContainer = false;
+									if (repository.StorageType == "AzureBlob")
 									{
-										deleteFileName = item.ItemID;
-									}
-									else
-									{
-										deleteFileName = item.FileName;
+										container = new BlobContainerClient(repository.AzureBlobConnectionString, repository.AzureBlobContainerID.ToLower());
+										hasContainer = await container.ExistsAsync();
 									}
 
-									switch (repository.StorageType)
+									foreach (RepositoryItems item in items)
 									{
-										case "AzureBlob":
-											if (hasContainer == true)
-											{
-												string blobID = relativeDirectoryUrlPath + deleteFileName;
-												await container.DeleteBlobIfExistsAsync(blobID);
-											}
-											break;
-										default:
-											string filePath = relativeDirectoryPath + deleteFileName;
-											repositoryManager.Delete(filePath);
-											break;
-									}
+										string deleteFileName;
+										if (repository.IsFileNameEncrypt.ParseBool() == true)
+										{
+											deleteFileName = item.ItemID;
+										}
+										else
+										{
+											deleteFileName = item.FileName;
+										}
 
-									if (StaticConfig.IsLocalDB == true)
-									{
-										liteDBClient.Delete<RepositoryItems>(p => p.ItemID == item.ItemID);
-									}
-									else
-									{
-										await businessApiClient.DeleteRepositoryItem(repositoryID, item.ItemID);
+										switch (repository.StorageType)
+										{
+											case "AzureBlob":
+												if (hasContainer == true)
+												{
+													string blobID = relativeDirectoryUrlPath + deleteFileName;
+													await container.DeleteBlobIfExistsAsync(blobID);
+												}
+												break;
+											default:
+												repositoryManager.Delete(deleteFileName);
+												break;
+										}
+
+										if (StaticConfig.IsLocalTransactionDB == true)
+										{
+											liteDBClient.Delete<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == item.ItemID && p.BusinessID == businessID);
+										}
+										else
+										{
+											await businessApiClient.DeleteRepositoryItem(repositoryID, item.ItemID, businessID);
+										}
 									}
 								}
 							}
@@ -679,7 +710,8 @@ namespace Qrame.Web.FileServer.Controllers
 						}
 
 						repositoryItem = new RepositoryItems();
-						repositoryItem.ItemID = repository.IsFileNameEncrypt.ParseBool() == true ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : fileName;
+						repositoryItem.ItemID = (repository.IsVirtualPath.ParseBool() == false && repository.IsFileNameEncrypt.ParseBool() == true) ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : fileName;
+						repositoryItem.BusinessID = businessID;
 						repositoryItem.OrderBy = sequence;
 						repositoryItem.ItemSummary = itemSummary;
 						repositoryItem.FileName = fileName;
@@ -742,7 +774,7 @@ namespace Qrame.Web.FileServer.Controllers
 								}
 								else
 								{
-									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}";
+									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}&BusinessID={repositoryItem.BusinessID}";
 									relativePath = Request.Path.Value.Replace("/UploadFile", "") + relativePath;
 									absolutePath = "//" + Request.Host.Value + relativePath;
 								}
@@ -776,12 +808,12 @@ namespace Qrame.Web.FileServer.Controllers
 								if (repository.IsVirtualPath.ParseBool() == true)
 								{
 									relativePath = string.Concat("/", repository.RepositoryID, "/");
-									relativePath = relativePath + relativeDirectoryUrlPath + repositoryItem.FileName;
+									relativePath = relativePath + relativeDirectoryUrlPath + repositoryItem.ItemID;
 									absolutePath = "//" + Request.Host.Value + relativePath;
 								}
 								else
 								{
-									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}";
+									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}&BusinessID={repositoryItem.BusinessID}";
 									relativePath = Request.Path.Value.Replace("/UploadFile", "") + relativePath;
 									absolutePath = "//" + Request.Host.Value + relativePath;
 								}
@@ -793,13 +825,20 @@ namespace Qrame.Web.FileServer.Controllers
 						}
 
 						bool isDataUpsert = false;
-						if (StaticConfig.IsLocalDB == true)
+						if (repository.IsFileUploadDownloadOnly.ParseBool() == true)
 						{
-							isDataUpsert = liteDBClient.Upsert(repositoryItem);
+							isDataUpsert = true;
 						}
 						else
 						{
-							isDataUpsert = await businessApiClient.UpsertRepositoryItem(repositoryItem);
+							if (StaticConfig.IsLocalTransactionDB == true)
+							{
+								isDataUpsert = liteDBClient.Upsert(repositoryItem);
+							}
+							else
+							{
+								isDataUpsert = await businessApiClient.UpsertRepositoryItem(repositoryItem);
+							}
 						}
 
 						if (isDataUpsert == true)
@@ -811,6 +850,7 @@ namespace Qrame.Web.FileServer.Controllers
 						{
 							result.Message = "UpsertRepositoryItem 데이터 거래 오류";
 							logger.Error("[{LogCategory}] " + $"{result.Message} - {JsonConvert.SerializeObject(repositoryItem)}", "FileManagerController/UploadFile");
+							return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 						}
 
 						#endregion
@@ -818,6 +858,8 @@ namespace Qrame.Web.FileServer.Controllers
 					catch (Exception exception)
 					{
 						result.Message = exception.Message;
+						logger.Error("[{LogCategory}] " + $"{result.Message} - {JsonConvert.SerializeObject(repositoryItem)}", "FileManagerController/UploadFile");
+						return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 					}
 				}
 			}
@@ -829,6 +871,7 @@ namespace Qrame.Web.FileServer.Controllers
 				if (string.IsNullOrEmpty(xFileName) == true || string.IsNullOrEmpty(xFileSize) == true)
 				{
 					result.Message = "업로드 파일 정보 없음";
+					return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 				}
 				else
 				{
@@ -847,21 +890,21 @@ namespace Qrame.Web.FileServer.Controllers
 						}
 
 						RepositoryManager repositoryManager = new RepositoryManager();
-						repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, customPath1, customPath2, customPath3);
-						string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, customPath1, customPath2, customPath3);
+						repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, businessID, customPath1, customPath2, customPath3);
+						string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, businessID, customPath1, customPath2, customPath3);
 						string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 						relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 
 						if (repository.IsMultiUpload.ParseBool() == true)
 						{
 							List<RepositoryItems> items = null;
-							if (StaticConfig.IsLocalDB == true)
+							if (StaticConfig.IsLocalTransactionDB == true)
 							{
-								items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+								items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
 							}
 							else
 							{
-								items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
+								items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
 							}
 
 							if (items != null)
@@ -871,20 +914,23 @@ namespace Qrame.Web.FileServer.Controllers
 									result.Message = repository.UploadCount.ToCurrencyString() + " 파일 갯수 이상 업로드 할 수 없습니다";
 									return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 								}
-							}
 
-							result.RemainingCount = repository.UploadCount - (items.Count + 1);
+								result.RemainingCount = repository.UploadCount - (items.Count + 1);
+							}
+							else {
+								result.RemainingCount = repository.UploadCount;
+							}
 						}
 						else
 						{
 							List<RepositoryItems> items = null;
-							if (StaticConfig.IsLocalDB == true)
+							if (StaticConfig.IsLocalTransactionDB == true)
 							{
-								items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+								items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
 							}
 							else
 							{
-								items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
+								items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
 							}
 
 							if (items != null && items.Count() > 0)
@@ -919,18 +965,17 @@ namespace Qrame.Web.FileServer.Controllers
 											}
 											break;
 										default:
-											string filePath = relativeDirectoryPath + deleteFileName;
-											repositoryManager.Delete(filePath);
+											repositoryManager.Delete(deleteFileName);
 											break;
 									}
 
-									if (StaticConfig.IsLocalDB == true)
+									if (StaticConfig.IsLocalTransactionDB == true)
 									{
-										liteDBClient.Delete<RepositoryItems>(p => p.ItemID == item.ItemID);
+										liteDBClient.Delete<RepositoryItems>(p => p.RepositoryID == item.RepositoryID && p.ItemID == item.ItemID && p.BusinessID == businessID);
 									}
 									else
 									{
-										await businessApiClient.DeleteRepositoryItem(repositoryID, item.ItemID);
+										await businessApiClient.DeleteRepositoryItem(repositoryID, item.ItemID, businessID);
 									}
 								}
 							}
@@ -942,16 +987,17 @@ namespace Qrame.Web.FileServer.Controllers
 						string extension = Path.GetExtension(fileName);
 						if (string.IsNullOrEmpty(extension) == true)
 						{
-							extension = Path.GetExtension(file.FileName);
+							extension = Path.GetExtension(xFileName);
 						}
 
 						repositoryItem = new RepositoryItems();
-						repositoryItem.ItemID = repository.IsFileNameEncrypt.ParseBool() == true ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : fileName;
+						repositoryItem.ItemID = (repository.IsVirtualPath.ParseBool() == false && repository.IsFileNameEncrypt.ParseBool() == true) ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : fileName;
+						repositoryItem.BusinessID = businessID;
 						repositoryItem.OrderBy = sequence;
 						repositoryItem.ItemSummary = itemSummary;
 						repositoryItem.FileName = fileName;
 						repositoryItem.Extension = extension;
-						repositoryItem.MimeType = GetMimeType(file.FileName);
+						repositoryItem.MimeType = GetMimeType(xFileName);
 						repositoryItem.FileLength = fileLength;
 						repositoryItem.RepositoryID = repositoryID;
 						repositoryItem.DependencyID = dependencyID;
@@ -1013,7 +1059,7 @@ namespace Qrame.Web.FileServer.Controllers
 								}
 								else
 								{
-									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}";
+									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}&BusinessID={repositoryItem.BusinessID}";
 									relativePath = Request.Path.Value.Replace("/UploadFile", "") + relativePath;
 									absolutePath = "//" + Request.Host.Value + relativePath;
 								}
@@ -1047,12 +1093,12 @@ namespace Qrame.Web.FileServer.Controllers
 								if (repository.IsVirtualPath.ParseBool() == true)
 								{
 									relativePath = string.Concat("/", repository.RepositoryID, "/");
-									relativePath = relativePath + relativeDirectoryUrlPath + repositoryItem.FileName;
+									relativePath = relativePath + relativeDirectoryUrlPath + repositoryItem.ItemID;
 									absolutePath = "//" + Request.Host.Value + relativePath;
 								}
 								else
 								{
-									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}";
+									relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}&BusinessID={repositoryItem.BusinessID}";
 									relativePath = Request.Path.Value.Replace("/UploadFile", "") + relativePath;
 									absolutePath = "//" + Request.Host.Value + relativePath;
 								}
@@ -1063,7 +1109,7 @@ namespace Qrame.Web.FileServer.Controllers
 						}
 
 						bool isDataUpsert = false;
-						if (StaticConfig.IsLocalDB == true)
+						if (StaticConfig.IsLocalTransactionDB == true)
 						{
 							isDataUpsert = liteDBClient.Upsert(repositoryItem);
 						}
@@ -1081,6 +1127,7 @@ namespace Qrame.Web.FileServer.Controllers
 						{
 							result.Message = "UpsertRepositoryItem 데이터 거래 오류";
 							logger.Error("[{LogCategory}] " + $"{result.Message} - {JsonConvert.SerializeObject(repositoryItem)}", "FileManagerController/UploadFile");
+							return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 						}
 
 						#endregion
@@ -1088,6 +1135,8 @@ namespace Qrame.Web.FileServer.Controllers
 					catch (Exception exception)
 					{
 						result.Message = exception.Message;
+						logger.Error("[{LogCategory}] " + $"{result.Message} - {JsonConvert.SerializeObject(repositoryItem)}", "FileManagerController/UploadFile");
+						return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 					}
 				}
 			}
@@ -1119,9 +1168,9 @@ namespace Qrame.Web.FileServer.Controllers
 			return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 		}
 
-		// http://localhost:7004/api/FileManager/UploadFiles
+		// http://localhost:8004/api/FileManager/UploadFiles
 		[HttpPost("UploadFiles")]
-		public async Task<ContentResult> UploadFiles(List<IFormFile> files)
+		public async Task<ContentResult> UploadFiles([FromForm] List<IFormFile> files)
 		{
 			MultiFileUploadResult result = new MultiFileUploadResult();
 			result.Result = false;
@@ -1143,14 +1192,15 @@ namespace Qrame.Web.FileServer.Controllers
 				return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 			}
 
-			string saveFileName = string.IsNullOrEmpty(Request.Query["fileName"]) == true ? "" : Request.Query["fileName"].ToString();
+			string saveFileName = string.IsNullOrEmpty(Request.Query["FileName"]) == true ? "" : Request.Query["FileName"].ToString();
 			string itemSummary = Request.Query["ItemSummary"].ToString();
 			string customPath1 = Request.Query["CustomPath1"].ToString();
 			string customPath2 = Request.Query["CustomPath2"].ToString();
 			string customPath3 = Request.Query["CustomPath3"].ToString();
 			string responseType = string.IsNullOrEmpty(Request.Query["responseType"]) == true ? "callback" : Request.Query["responseType"].ToString();
-			string userID = string.IsNullOrEmpty(Request.Query["UserID"]) == true ? "system" : Request.Query["UserID"].ToString();
-			string callback = string.IsNullOrEmpty(Request.Query["callback"]) == true ? "" : Request.Query["callback"].ToString();
+			string userID = string.IsNullOrEmpty(Request.Query["UserID"]) == true ? "" : Request.Query["UserID"].ToString();
+			string callback = string.IsNullOrEmpty(Request.Query["Callback"]) == true ? "" : Request.Query["Callback"].ToString();
+			string businessID = string.IsNullOrEmpty(Request.Query["BusinessID"]) == true ? "" : Request.Query["BusinessID"].ToString();
 
 			RepositoryItems repositoryItem = null;
 
@@ -1183,93 +1233,107 @@ namespace Qrame.Web.FileServer.Controllers
 				}
 
 				RepositoryManager repositoryManager = new RepositoryManager();
-				repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, customPath1, customPath2, customPath3);
-				string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, customPath1, customPath2, customPath3);
+				repositoryManager.PersistenceDirectoryPath = repositoryManager.GetPhysicalPath(repository, businessID, customPath1, customPath2, customPath3);
+				string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, businessID, customPath1, customPath2, customPath3);
 				string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 				relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 				string policyPath = repositoryManager.GetPolicyPath(repository);
 
 				if (repository.IsMultiUpload.ParseBool() == true)
 				{
-					List<RepositoryItems> items = null;
-					if (StaticConfig.IsLocalDB == true)
+					if (repository.IsFileUploadDownloadOnly.ParseBool() == true)
 					{
-						items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+						result.RemainingCount = repository.UploadCount;
 					}
 					else
 					{
-						items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
-					}
-
-					if (items != null && items.Count > 0)
-					{
-						if ((items.Count + files.Count) > repository.UploadCount)
+						List<RepositoryItems> items = null;
+						if (StaticConfig.IsLocalTransactionDB == true)
 						{
-							stringBuilder.AppendLine(scriptStart);
-							stringBuilder.AppendLine("alert('" + repository.UploadCount.ToCurrencyString() + " 파일 갯수 이상 업로드 할 수 없습니다');");
-							stringBuilder.AppendLine("history.go(-1);");
-							stringBuilder.AppendLine(scriptEnd);
-							return Content(stringBuilder.ToString(), "text/html", Encoding.UTF8);
+							items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
 						}
-					}
+						else
+						{
+							items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
+						}
 
-					result.RemainingCount = repository.UploadCount - (items.Count + files.Count);
+						if (items != null && items.Count > 0)
+						{
+							if ((items.Count + files.Count) > repository.UploadCount)
+							{
+								stringBuilder.AppendLine(scriptStart);
+								stringBuilder.AppendLine("alert('" + repository.UploadCount.ToCurrencyString() + " 파일 갯수 이상 업로드 할 수 없습니다');");
+								stringBuilder.AppendLine("history.go(-1);");
+								stringBuilder.AppendLine(scriptEnd);
+								return Content(stringBuilder.ToString(), "text/html", Encoding.UTF8);
+							}
+						}
+
+						result.RemainingCount = repository.UploadCount - (items.Count + files.Count);
+					}
 				}
 				else
 				{
-					List<RepositoryItems> items = null;
-					if (StaticConfig.IsLocalDB == true)
+					if (repository.IsFileUploadDownloadOnly.ParseBool() == true)
 					{
-						items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+						result.RemainingCount = repository.UploadCount;
 					}
 					else
 					{
-						items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
-					}
-
-					if (items != null && items.Count() > 0)
-					{
-						BlobContainerClient container = null;
-						bool hasContainer = false;
-						if (repository.StorageType == "AzureBlob")
+						List<RepositoryItems> items = null;
+						if (StaticConfig.IsLocalTransactionDB == true)
 						{
-							container = new BlobContainerClient(repository.AzureBlobConnectionString, repository.AzureBlobContainerID.ToLower());
-							hasContainer = await container.ExistsAsync();
+							items = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
+						}
+						else
+						{
+							items = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
 						}
 
-						foreach (RepositoryItems item in items)
+						if (items != null && items.Count() > 0)
 						{
-							string deleteFileName;
-							if (repository.IsFileNameEncrypt.ParseBool() == true)
+							BlobContainerClient container = null;
+							bool hasContainer = false;
+							if (repository.StorageType == "AzureBlob")
 							{
-								deleteFileName = item.ItemID;
-							}
-							else
-							{
-								deleteFileName = item.FileName;
+								container = new BlobContainerClient(repository.AzureBlobConnectionString, repository.AzureBlobContainerID.ToLower());
+								hasContainer = await container.ExistsAsync();
 							}
 
-							switch (repository.StorageType)
+							foreach (RepositoryItems item in items)
 							{
-								case "AzureBlob":
-									if (hasContainer == true)
-									{
-										string blobID = relativeDirectoryUrlPath + deleteFileName;
-										await container.DeleteBlobIfExistsAsync(blobID);
-									}
-									break;
-								default:
-									repositoryManager.Delete(deleteFileName);
-									break;
-							}
+								string deleteFileName;
+								if (repository.IsFileNameEncrypt.ParseBool() == true)
+								{
+									deleteFileName = item.ItemID;
+								}
+								else
+								{
+									deleteFileName = item.FileName;
+								}
 
-							if (StaticConfig.IsLocalDB == true)
-							{
-								liteDBClient.Delete<RepositoryItems>(p => p.ItemID == item.ItemID);
-							}
-							else
-							{
-								await businessApiClient.DeleteRepositoryItem(repositoryID, item.ItemID);
+								switch (repository.StorageType)
+								{
+									case "AzureBlob":
+										if (hasContainer == true)
+										{
+											string blobID = relativeDirectoryUrlPath + deleteFileName;
+											await container.DeleteBlobIfExistsAsync(blobID);
+										}
+										break;
+									default:
+										repositoryManager.Delete(deleteFileName);
+										break;
+								}
+
+								if (StaticConfig.IsLocalTransactionDB == true)
+								{
+									liteDBClient.Delete<RepositoryItems>(p => p.RepositoryID == item.RepositoryID && p.ItemID == item.ItemID && p.BusinessID == businessID);
+								}
+								else
+								{
+									await businessApiClient.DeleteRepositoryItem(repositoryID, item.ItemID, businessID);
+								}
 							}
 						}
 					}
@@ -1292,17 +1356,15 @@ namespace Qrame.Web.FileServer.Controllers
 							string relativePath = "";
 							string fileName = string.IsNullOrEmpty(saveFileName) == true ? file.FileName : saveFileName;
 							string extension = Path.GetExtension(fileName);
-							if (string.IsNullOrEmpty(extension) == true) {
-								extension = Path.GetExtension(file.FileName);
-							}
 
 							repositoryItem = new RepositoryItems();
-							repositoryItem.ItemID = repository.IsFileNameEncrypt.ParseBool() == true ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : fileName;
+							repositoryItem.ItemID = (repository.IsVirtualPath.ParseBool() == false && repository.IsFileNameEncrypt.ParseBool() == true) ? Guid.NewGuid().ToString().Replace("-", string.Empty).ToUpper() : fileName;
+							repositoryItem.BusinessID = businessID;
 							repositoryItem.OrderBy = sequence;
 							repositoryItem.ItemSummary = itemSummary;
 							repositoryItem.FileName = fileName;
 							repositoryItem.Extension = extension;
-							repositoryItem.MimeType = GetMimeType(file.FileName);
+							repositoryItem.MimeType = GetMimeType(fileName);
 							repositoryItem.FileLength = file.Length;
 							repositoryItem.RepositoryID = repositoryID;
 							repositoryItem.DependencyID = dependencyID;
@@ -1360,7 +1422,7 @@ namespace Qrame.Web.FileServer.Controllers
 									}
 									else
 									{
-										relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}";
+										relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}&BusinessID={repositoryItem.BusinessID}";
 										relativePath = Request.Path.Value.Replace("/UploadFiles", "") + relativePath;
 										absolutePath = "//" + Request.Host.Value + relativePath;
 									}
@@ -1394,12 +1456,12 @@ namespace Qrame.Web.FileServer.Controllers
 									if (repository.IsVirtualPath.ParseBool() == true)
 									{
 										relativePath = string.Concat("/", repository.RepositoryID, "/");
-										relativePath = relativePath + relativeDirectoryUrlPath + repositoryItem.FileName;
+										relativePath = relativePath + relativeDirectoryUrlPath + repositoryItem.ItemID;
 										absolutePath = "//" + Request.Host.Value + relativePath;
 									}
 									else
 									{
-										relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}";
+										relativePath = $"/HttpDownloadFile?RepositoryID={repositoryItem.RepositoryID}&ItemID={repositoryItem.ItemID}&BusinessID={repositoryItem.BusinessID}";
 										relativePath = Request.Path.Value.Replace("/UploadFiles", "") + relativePath;
 										absolutePath = "//" + Request.Host.Value + relativePath;
 									}
@@ -1410,13 +1472,20 @@ namespace Qrame.Web.FileServer.Controllers
 							}
 
 							bool isDataUpsert = false;
-							if (StaticConfig.IsLocalDB == true)
+							if (repository.IsFileUploadDownloadOnly.ParseBool() == true)
 							{
-								isDataUpsert = liteDBClient.Upsert(repositoryItem);
+								isDataUpsert = true;
 							}
 							else
 							{
-								isDataUpsert = await businessApiClient.UpsertRepositoryItem(repositoryItem);
+								if (StaticConfig.IsLocalTransactionDB == true)
+								{
+									isDataUpsert = liteDBClient.Upsert(repositoryItem);
+								}
+								else
+								{
+									isDataUpsert = await businessApiClient.UpsertRepositoryItem(repositoryItem);
+								}
 							}
 
 							if (isDataUpsert == true)
@@ -1451,17 +1520,7 @@ namespace Qrame.Web.FileServer.Controllers
 				return Content(stringBuilder.ToString(), "text/html", Encoding.UTF8);
 			}
 
-			List<RepositoryItems> repositoryItems = null;
-			if (StaticConfig.IsLocalDB == true)
-			{
-				repositoryItems = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
-			}
-			else
-			{
-				repositoryItems = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
-			}
-
-			if (repositoryItems != null && repositoryItems.Count > 0 && string.IsNullOrEmpty(callback) == false)
+			if (repository.IsFileUploadDownloadOnly.ParseBool() == true)
 			{
 				if (responseType == "callback")
 				{
@@ -1471,31 +1530,6 @@ namespace Qrame.Web.FileServer.Controllers
 					stringBuilder.AppendLine("var repositoryID = '" + repositoryID + "';");
 					stringBuilder.AppendLine("var repositoryItems = [];");
 
-					for (int i = 0; i < repositoryItems.Count; i++)
-					{
-						var item = repositoryItems[i];
-						var entity = new
-						{
-							ItemID = item.ItemID,
-							RepositoryID = item.RepositoryID,
-							DependencyID = item.DependencyID,
-							FileName = item.FileName,
-							Sequence = item.OrderBy,
-							AbsolutePath = item.AbsolutePath,
-							RelativePath = item.RelativePath,
-							Extension = item.Extension,
-							Size = item.FileLength,
-							MimeType = item.MimeType,
-							CustomPath1 = item.CustomPath1,
-							CustomPath2 = item.CustomPath2,
-							CustomPath3 = item.CustomPath3,
-							PolicyPath = item.PolicyPath,
-							MD5 = item.MD5
-						};
-
-						stringBuilder.AppendLine("repositoryItems.push(" + Qrame.CoreFX.Data.JsonConverter.Serialize(entity) + ");");
-					}
-
 					// stringBuilder.AppendLine("parent." + callback + "(repositoryID, repositoryItems);");
 					stringBuilder.AppendLine("parent.postMessage({action: 'UploadFiles', elementID: elementID, callback: callback, repositoryID: repositoryID, repositoryItems: repositoryItems}, '*');");
 					stringBuilder.AppendLine(scriptEnd);
@@ -1504,36 +1538,10 @@ namespace Qrame.Web.FileServer.Controllers
 				}
 				else if (responseType == "json")
 				{
-					List<dynamic> entitys = new List<dynamic>();
-					for (int i = 0; i < repositoryItems.Count; i++)
-					{
-						var item = repositoryItems[i];
-						var entity = new
-						{
-							ItemID = item.ItemID,
-							RepositoryID = item.RepositoryID,
-							DependencyID = item.DependencyID,
-							FileName = item.FileName,
-							Sequence = item.OrderBy,
-							AbsolutePath = item.AbsolutePath,
-							RelativePath = item.RelativePath,
-							Extension = item.Extension,
-							Size = item.FileLength,
-							MimeType = item.MimeType,
-							CustomPath1 = item.CustomPath1,
-							CustomPath2 = item.CustomPath2,
-							CustomPath3 = item.CustomPath3,
-							PolicyPath = item.PolicyPath,
-							MD5 = item.MD5
-						};
-
-						entitys.Add(entity);
-					}
-
 					Response.Headers["Access-Control-Expose-Headers"] = "Qrame_ModelType, Qrame_Result";
 					Response.Headers["Qrame_ModelType"] = "MultiFileItemResult";
 
-					Response.Headers["Qrame_Result"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(entitys)));
+					Response.Headers["Qrame_Result"] = Convert.ToBase64String(Encoding.UTF8.GetBytes("[]"));
 					Response.Headers["X-Frame-Options"] = StaticConfig.XFrameOptions;
 					return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
 				}
@@ -1544,15 +1552,109 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 			else
 			{
-				stringBuilder.AppendLine(scriptStart);
-				stringBuilder.AppendLine("alert('잘못된 파일 업로드 요청');");
-				stringBuilder.AppendLine("history.go(-1);");
-				stringBuilder.AppendLine(scriptEnd);
-				return Content(stringBuilder.ToString(), "text/html", Encoding.UTF8);
+				List<RepositoryItems> repositoryItems = null;
+				if (StaticConfig.IsLocalTransactionDB == true)
+				{
+					repositoryItems = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
+				}
+				else
+				{
+					repositoryItems = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
+				}
+
+				if (repositoryItems != null && repositoryItems.Count > 0 && string.IsNullOrEmpty(callback) == false)
+				{
+					if (responseType == "callback")
+					{
+						stringBuilder.AppendLine(scriptStart);
+						stringBuilder.AppendLine("var elementID = '" + elementID + "';");
+						stringBuilder.AppendLine("var callback = '" + callback + "';");
+						stringBuilder.AppendLine("var repositoryID = '" + repositoryID + "';");
+						stringBuilder.AppendLine("var repositoryItems = [];");
+
+						for (int i = 0; i < repositoryItems.Count; i++)
+						{
+							var item = repositoryItems[i];
+							var entity = new
+							{
+								ItemID = item.ItemID,
+								RepositoryID = item.RepositoryID,
+								DependencyID = item.DependencyID,
+								FileName = item.FileName,
+								Sequence = item.OrderBy,
+								AbsolutePath = item.AbsolutePath,
+								RelativePath = item.RelativePath,
+								Extension = item.Extension,
+								Size = item.FileLength,
+								MimeType = item.MimeType,
+								CustomPath1 = item.CustomPath1,
+								CustomPath2 = item.CustomPath2,
+								CustomPath3 = item.CustomPath3,
+								PolicyPath = item.PolicyPath,
+								MD5 = item.MD5
+							};
+
+							stringBuilder.AppendLine("repositoryItems.push(" + Qrame.CoreFX.Data.JsonConverter.Serialize(entity) + ");");
+						}
+
+						// stringBuilder.AppendLine("parent." + callback + "(repositoryID, repositoryItems);");
+						stringBuilder.AppendLine("parent.postMessage({action: 'UploadFiles', elementID: elementID, callback: callback, repositoryID: repositoryID, repositoryItems: repositoryItems}, '*');");
+						stringBuilder.AppendLine(scriptEnd);
+
+						return Content(stringBuilder.ToString(), "text/html", Encoding.UTF8);
+					}
+					else if (responseType == "json")
+					{
+						List<dynamic> entitys = new List<dynamic>();
+						for (int i = 0; i < repositoryItems.Count; i++)
+						{
+							var item = repositoryItems[i];
+							var entity = new
+							{
+								ItemID = item.ItemID,
+								RepositoryID = item.RepositoryID,
+								DependencyID = item.DependencyID,
+								FileName = item.FileName,
+								Sequence = item.OrderBy,
+								AbsolutePath = item.AbsolutePath,
+								RelativePath = item.RelativePath,
+								Extension = item.Extension,
+								Size = item.FileLength,
+								MimeType = item.MimeType,
+								CustomPath1 = item.CustomPath1,
+								CustomPath2 = item.CustomPath2,
+								CustomPath3 = item.CustomPath3,
+								PolicyPath = item.PolicyPath,
+								MD5 = item.MD5
+							};
+
+							entitys.Add(entity);
+						}
+
+						Response.Headers["Access-Control-Expose-Headers"] = "Qrame_ModelType, Qrame_Result";
+						Response.Headers["Qrame_ModelType"] = "MultiFileItemResult";
+
+						Response.Headers["Qrame_Result"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(entitys)));
+						Response.Headers["X-Frame-Options"] = StaticConfig.XFrameOptions;
+						return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
+					}
+					else
+					{
+						return Content("", "text/html", Encoding.UTF8);
+					}
+				}
+				else
+				{
+					stringBuilder.AppendLine(scriptStart);
+					stringBuilder.AppendLine("alert('잘못된 파일 업로드 요청');");
+					stringBuilder.AppendLine("history.go(-1);");
+					stringBuilder.AppendLine(scriptEnd);
+					return Content(stringBuilder.ToString(), "text/html", Encoding.UTF8);
+				}
 			}
 		}
 
-		// http://localhost:7004/api/FileManager/DownloadFile
+		// http://localhost:8004/api/FileManager/DownloadFile
 		[HttpPost("DownloadFile")]
 		public async Task<ActionResult> DownloadFile(DownloadRequest downloadRequest)
 		{
@@ -1565,6 +1667,7 @@ namespace Qrame.Web.FileServer.Controllers
 			string itemID = downloadRequest.ItemID;
 			string fileMD5 = downloadRequest.FileMD5;
 			string tokenID = downloadRequest.TokenID;
+			string businessID = downloadRequest.BusinessID;
 
 			// 보안 검증 처리
 
@@ -1587,10 +1690,10 @@ namespace Qrame.Web.FileServer.Controllers
 			switch (repository.StorageType)
 			{
 				case "AzureBlob":
-					result = await ExecuteBlobFileDownload(downloadResult, repositoryID, itemID);
+					result = await ExecuteBlobFileDownload(downloadResult, repositoryID, itemID, businessID);
 					break;
 				default:
-					result = await ExecuteFileDownload(downloadResult, repositoryID, itemID);
+					result = await ExecuteFileDownload(downloadResult, repositoryID, itemID, businessID);
 					break;
 			}
 
@@ -1602,9 +1705,9 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/HttpDownloadFile?repositoryid=2FD91746-D77A-4EE1-880B-14AA604ACE5A&itemID=
+		// http://localhost:8004/api/FileManager/HttpDownloadFile?repositoryid=2FD91746-D77A-4EE1-880B-14AA604ACE5A&itemID=
 		[HttpGet("HttpDownloadFile")]
-		public async Task<ActionResult> HttpDownloadFile(string repositoryID, string itemID, string fileMD5, string tokenID)
+		public async Task<ActionResult> HttpDownloadFile(string repositoryID, string itemID, string fileMD5, string tokenID, string businessID)
 		{
 			ActionResult result = NotFound();
 
@@ -1620,6 +1723,11 @@ namespace Qrame.Web.FileServer.Controllers
 				return result;
 			}
 
+			if (string.IsNullOrEmpty(businessID) == true)
+			{
+				businessID = "";
+			}
+
 			BusinessApiClient businessApiClient = new BusinessApiClient(logger);
 			Repository repository = businessApiClient.GetRepository(repositoryID);
 			if (repository == null)
@@ -1629,13 +1737,37 @@ namespace Qrame.Web.FileServer.Controllers
 				return result;
 			}
 
+			if (repository.WithOriginYN == true)
+			{
+				bool isWithOrigin = false;
+				string requestRefererUrl = Request.Headers["Referer"];
+				if (string.IsNullOrEmpty(requestRefererUrl) == false)
+				{
+					for (int i = 0; i < StaticConfig.WithOrigins.Count; i++)
+					{
+						string origin = StaticConfig.WithOrigins[i];
+						if (requestRefererUrl.IndexOf(origin) > -1)
+						{
+							isWithOrigin = true;
+							break;
+						}
+					}
+				}
+
+				if (isWithOrigin == false)
+				{
+					result = BadRequest();
+					return result;
+				}
+			}
+
 			switch (repository.StorageType)
 			{
 				case "AzureBlob":
-					result = await ExecuteBlobFileDownload(downloadResult, repositoryID, itemID);
+					result = await ExecuteBlobFileDownload(downloadResult, repositoryID, itemID, businessID);
 					break;
 				default:
-					result = await ExecuteFileDownload(downloadResult, repositoryID, itemID);
+					result = await ExecuteFileDownload(downloadResult, repositoryID, itemID, businessID);
 					break;
 			}
 
@@ -1647,9 +1779,9 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/VirtualDownloadFile?repositoryid=2FD91746-D77A-4EE1-880B-14AA604ACE5A&filename=강아지.jpg&subdirectory=2020
+		// http://localhost:8004/api/FileManager/VirtualDownloadFile?repositoryid=2FD91746-D77A-4EE1-880B-14AA604ACE5A&filename=강아지.jpg&subdirectory=2020
 		[HttpGet("VirtualDownloadFile")]
-		public async Task<ActionResult> VirtualDownloadFile(string repositoryID, string fileName, string subDirectory)
+		public async Task<ActionResult> VirtualDownloadFile(string repositoryID, string fileName, string subDirectory, string businessID)
 		{
 			ActionResult result = NotFound();
 
@@ -1663,6 +1795,11 @@ namespace Qrame.Web.FileServer.Controllers
 				return result;
 			}
 
+			if (string.IsNullOrEmpty(businessID) == true)
+			{
+				businessID = "";
+			}
+
 			BusinessApiClient businessApiClient = new BusinessApiClient(logger);
 			Repository repository = businessApiClient.GetRepository(repositoryID);
 			if (repository == null)
@@ -1672,7 +1809,29 @@ namespace Qrame.Web.FileServer.Controllers
 				return result;
 			}
 
-			result = await VirtualFileDownload(downloadResult, repositoryID, fileName, subDirectory);
+			if (repository.WithOriginYN == true) {
+				bool isWithOrigin = false;
+				string requestRefererUrl = Request.Headers["Referer"];
+				if (string.IsNullOrEmpty(requestRefererUrl) == false)
+				{
+					for (int i = 0; i < StaticConfig.WithOrigins.Count; i++)
+					{
+						string origin = StaticConfig.WithOrigins[i];
+						if (requestRefererUrl.IndexOf(origin) > -1)
+						{
+							isWithOrigin = true;
+							break;
+						}
+					}
+				}
+
+				if (isWithOrigin == false) {
+					result = BadRequest();
+					return result;
+				}
+			}
+
+			result = await VirtualFileDownload(downloadResult, repositoryID, fileName, subDirectory, businessID);
 
 			Response.Headers["Access-Control-Expose-Headers"] = "Qrame_ModelType, Qrame_Result";
 			Response.Headers["Qrame_ModelType"] = "DownloadResult";
@@ -1682,7 +1841,118 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/GetRepositorys
+		// http://localhost:8004/api/FileManager/VirtualDeleteFile?repositoryid=2FD91746-D77A-4EE1-880B-14AA604ACE5A&filename=강아지.jpg&subdirectory=2020
+		[HttpGet("VirtualDeleteFile")]
+		public async Task<ActionResult> VirtualDeleteFile(string repositoryID, string fileName, string subDirectory, string businessID)
+		{
+			ActionResult result = NotFound();
+
+			DeleteResult deleteResult = new DeleteResult();
+			deleteResult.Result = false;
+
+			if (string.IsNullOrEmpty(repositoryID) == true || string.IsNullOrEmpty(fileName) == true)
+			{
+				deleteResult.Message = "RepositoryID 또는 fileName 필수 요청 정보 필요";
+				result = StatusCode(400, deleteResult.Message);
+				return result;
+			}
+
+			if (string.IsNullOrEmpty(businessID) == true)
+			{
+				businessID = "";
+			}
+
+			BusinessApiClient businessApiClient = new BusinessApiClient(logger);
+			Repository repository = businessApiClient.GetRepository(repositoryID);
+			if (repository == null)
+			{
+				deleteResult.Message = "RepositoryID 요청 정보 확인 필요";
+				result = StatusCode(400, deleteResult.Message);
+				return result;
+			}
+
+			if (string.IsNullOrEmpty(repositoryID) == true || string.IsNullOrEmpty(fileName) == true)
+			{
+				deleteResult.Message = "RepositoryID 또는 fileName 필수 요청 정보 필요";
+				result = StatusCode(400, deleteResult.Message);
+				return result;
+			}
+
+			if (repository.IsVirtualPath.ParseBool() == false)
+			{
+				deleteResult.Message = "Virtual 작업 지원 안함";
+				result = StatusCode(400, deleteResult.Message);
+				return result;
+			}
+
+			RepositoryManager repositoryManager = new RepositoryManager();
+
+			if (repository.StorageType == "AzureBlob")
+			{
+				BlobContainerClient container = new BlobContainerClient(repository.AzureBlobConnectionString, repository.AzureBlobContainerID.ToLower());
+				await container.CreateIfNotExistsAsync(PublicAccessType.Blob);
+				string blobID = (string.IsNullOrEmpty(businessID) == false ? businessID + "/" : "") + (string.IsNullOrEmpty(subDirectory) == false ? subDirectory + "/" : "") + fileName;
+				BlobClient blob = container.GetBlobClient(blobID);
+				if (await blob.ExistsAsync() == true)
+				{
+					Azure.Response azureResponse = await blob.DeleteAsync();
+					deleteResult.Message = azureResponse.ToString();
+				}
+				else
+				{
+					result = NotFound();
+					deleteResult.Message = $"파일을 찾을 수 없습니다. FileID - '{blobID}'";
+				}
+			}
+			else
+			{
+				string persistenceDirectoryPath = repository.PhysicalPath;
+				if (string.IsNullOrEmpty(businessID) == false)
+				{
+					persistenceDirectoryPath = Path.Combine(repository.PhysicalPath, businessID);
+				}
+
+				if (string.IsNullOrEmpty(subDirectory) == true)
+				{
+					repositoryManager.PersistenceDirectoryPath = persistenceDirectoryPath;
+				}
+				else
+				{
+					repositoryManager.PersistenceDirectoryPath = Path.Combine(persistenceDirectoryPath, subDirectory);
+				}
+
+				var filePath = Path.Combine(repositoryManager.PersistenceDirectoryPath, fileName);
+				try
+				{
+					if (System.IO.File.Exists(filePath) == true)
+					{
+						System.IO.File.Delete(filePath);
+						deleteResult.Result = true;
+						return Content(JsonConvert.SerializeObject(result), "application/json", Encoding.UTF8);
+					}
+					else
+					{
+						result = NotFound();
+						deleteResult.Message = $"파일을 찾을 수 없습니다. fileName - '{fileName}', subDirectory - '{subDirectory}'";
+					}
+				}
+				catch (Exception exception)
+				{
+					result = StatusCode(500, exception.ToMessage());
+					deleteResult.Message = $"파일을 삭제 중 오류가 발생했습니다. fileName - '{fileName}', subDirectory - '{subDirectory}', message - '{exception.Message}'";
+					logger.Error("[{LogCategory}] " + $"{deleteResult.Message} - {exception.ToMessage()}", "FileManagerController/VirtualFileDownload");
+				}
+			}
+
+			Response.Headers["Access-Control-Expose-Headers"] = "Qrame_ModelType, Qrame_Result";
+			Response.Headers["Qrame_ModelType"] = "DeleteResult";
+
+			Response.Headers["Qrame_Result"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(deleteResult)));
+			Response.Headers["X-Frame-Options"] = StaticConfig.XFrameOptions;
+			return result;
+		}
+
+		// http://localhost:8004/api/FileManager/GetRepositorys
 		[HttpGet("GetRepositorys")]
 		public string GetRepositorys()
 		{
@@ -1711,7 +1981,6 @@ namespace Qrame.Web.FileServer.Controllers
 							IsAutoPath = repository.IsAutoPath,
 							PolicyPathID = repository.PolicyPathID,
 							UploadTypeID = repository.UploadTypeID,
-							UploadType = repository.UploadType,
 							UploadExtensions = repository.UploadExtensions,
 							UploadCount = repository.UploadCount,
 							UploadSizeLimit = repository.UploadSizeLimit,
@@ -1742,9 +2011,9 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/RemoveItem?repositoryID=AttachFile&itemid=12345678
+		// http://localhost:8004/api/FileManager/RemoveItem?repositoryID=AttachFile&itemid=12345678
 		[HttpGet("RemoveItem")]
-		public async Task<ContentResult> RemoveItem(string repositoryID, string itemID)
+		public async Task<ContentResult> RemoveItem(string repositoryID, string itemID, string businessID)
 		{
 			JsonContentResult jsonContentResult = new JsonContentResult();
 			jsonContentResult.Result = false;
@@ -1755,6 +2024,10 @@ namespace Qrame.Web.FileServer.Controllers
 				logger.Warning("[{LogCategory}] " + jsonContentResult.Message, "FileManagerController/RemoveItem");
 				return Content(JsonConvert.SerializeObject(jsonContentResult), "application/json", Encoding.UTF8);
 			}
+
+			if (string.IsNullOrEmpty(businessID) ==true) {
+				businessID = "";
+            }
 
 			BusinessApiClient businessApiClient = new BusinessApiClient(logger);
 			Repository repository = businessApiClient.GetRepository(repositoryID);
@@ -1768,20 +2041,20 @@ namespace Qrame.Web.FileServer.Controllers
 			try
 			{
 				RepositoryItems repositoryItem = null;
-				if (StaticConfig.IsLocalDB == true)
+				if (StaticConfig.IsLocalTransactionDB == true)
 				{
-					repositoryItem = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID).FirstOrDefault();
+					repositoryItem = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID && p.BusinessID == businessID).FirstOrDefault();
 				}
 				else
 				{
-					repositoryItem = await businessApiClient.GetRepositoryItem(repositoryID, itemID);
+					repositoryItem = await businessApiClient.GetRepositoryItem(repositoryID, itemID, businessID);
 				}
 
 				if (repositoryItem != null)
 				{
 					RepositoryManager repositoryManager = new RepositoryManager();
 					repositoryManager.PersistenceDirectoryPath = repositoryManager.GetRepositoryItemPath(repository, repositoryItem);
-					string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
+					string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
 					string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 					relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 
@@ -1793,14 +2066,14 @@ namespace Qrame.Web.FileServer.Controllers
 						hasContainer = await container.ExistsAsync();
 					}
 
-					string fileName;
+					string deleteFileName;
 					if (repository.IsFileNameEncrypt.ParseBool() == true)
 					{
-						fileName = repositoryItem.ItemID;
+						deleteFileName = repositoryItem.ItemID;
 					}
 					else
 					{
-						fileName = repositoryItem.FileName;
+						deleteFileName = repositoryItem.FileName;
 					}
 
 					switch (repository.StorageType)
@@ -1808,23 +2081,22 @@ namespace Qrame.Web.FileServer.Controllers
 						case "AzureBlob":
 							if (hasContainer == true)
 							{
-								string blobID = relativeDirectoryUrlPath + fileName;
+								string blobID = relativeDirectoryUrlPath + deleteFileName;
 								await container.DeleteBlobIfExistsAsync(blobID);
 							}
 							break;
 						default:
-							string filePath = relativeDirectoryPath + fileName;
-							repositoryManager.Delete(filePath);
+							repositoryManager.Delete(deleteFileName);
 							break;
 					}
 
-					if (StaticConfig.IsLocalDB == true)
+					if (StaticConfig.IsLocalTransactionDB == true)
 					{
-						liteDBClient.Delete<RepositoryItems>(p => p.ItemID == repositoryItem.ItemID);
+						liteDBClient.Delete<RepositoryItems>(p => p.RepositoryID == repositoryItem.RepositoryID && p.ItemID == repositoryItem.ItemID && p.BusinessID == businessID);
 					}
 					else
 					{
-						await businessApiClient.DeleteRepositoryItem(repositoryID, repositoryItem.ItemID);
+						await businessApiClient.DeleteRepositoryItem(repositoryID, repositoryItem.ItemID, businessID);
 					}
 
 					jsonContentResult.Result = true;
@@ -1844,9 +2116,9 @@ namespace Qrame.Web.FileServer.Controllers
 			return Content(JsonConvert.SerializeObject(jsonContentResult), "application/json", Encoding.UTF8);
 		}
 
-		// http://localhost:7004/api/FileManager/RemoveItems?repositoryID=AttachFile&dependencyID=helloworld
+		// http://localhost:8004/api/FileManager/RemoveItems?repositoryID=AttachFile&dependencyID=helloworld
 		[HttpGet("RemoveItems")]
-		public async Task<ContentResult> RemoveItems(string repositoryID, string dependencyID)
+		public async Task<ContentResult> RemoveItems(string repositoryID, string dependencyID, string businessID)
 		{
 			JsonContentResult jsonContentResult = new JsonContentResult();
 			jsonContentResult.Result = false;
@@ -1857,6 +2129,10 @@ namespace Qrame.Web.FileServer.Controllers
 				logger.Warning("[{LogCategory}] " + jsonContentResult.Message, "FileManagerController/RemoveItems");
 				return Content(JsonConvert.SerializeObject(jsonContentResult), "application/json", Encoding.UTF8);
 			}
+
+			if (string.IsNullOrEmpty(businessID) == true) {
+				businessID = "";
+            }
 
 			BusinessApiClient businessApiClient = new BusinessApiClient(logger);
 			Repository repository = businessApiClient.GetRepository(repositoryID);
@@ -1871,13 +2147,13 @@ namespace Qrame.Web.FileServer.Controllers
 			try
 			{
 				List<RepositoryItems> repositoryItems = null;
-				if (StaticConfig.IsLocalDB == true)
+				if (StaticConfig.IsLocalTransactionDB == true)
 				{
-					repositoryItems = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID).ToList();
+					repositoryItems = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.DependencyID == dependencyID && p.BusinessID == businessID);
 				}
 				else
 				{
-					repositoryItems = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID);
+					repositoryItems = await businessApiClient.GetRepositoryItems(repositoryID, dependencyID, businessID);
 				}
 
 				if (repositoryItems != null && repositoryItems.Count > 0)
@@ -1895,19 +2171,18 @@ namespace Qrame.Web.FileServer.Controllers
 					foreach (var repositoryItem in repositoryItems)
 					{
 						repositoryManager.PersistenceDirectoryPath = repositoryManager.GetRepositoryItemPath(repository, repositoryItem);
-						string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
+						string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
 						string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 						relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 
-						string fileName;
-
+						string deleteFileName;
 						if (repository.IsFileNameEncrypt.ParseBool() == true)
 						{
-							fileName = repositoryItem.ItemID;
+							deleteFileName = repositoryItem.ItemID;
 						}
 						else
 						{
-							fileName = repositoryItem.FileName;
+							deleteFileName = repositoryItem.FileName;
 						}
 
 						switch (repository.StorageType)
@@ -1915,23 +2190,22 @@ namespace Qrame.Web.FileServer.Controllers
 							case "AzureBlob":
 								if (hasContainer == true)
 								{
-									string blobID = relativeDirectoryUrlPath + fileName;
+									string blobID = relativeDirectoryUrlPath + deleteFileName;
 									await container.DeleteBlobIfExistsAsync(blobID);
 								}
 								break;
 							default:
-								string filePath = relativeDirectoryPath + fileName;
-								repositoryManager.Delete(filePath);
+								repositoryManager.Delete(deleteFileName);
 								break;
 						}
 
-						if (StaticConfig.IsLocalDB == true)
+						if (StaticConfig.IsLocalTransactionDB == true)
 						{
-							liteDBClient.Delete<RepositoryItems>(p => p.ItemID == repositoryItem.ItemID);
+							liteDBClient.Delete<RepositoryItems>(p => p.RepositoryID == repositoryItem.RepositoryID && p.ItemID == repositoryItem.ItemID && p.BusinessID == businessID);
 						}
 						else
 						{
-							await businessApiClient.DeleteRepositoryItem(repositoryID, repositoryItem.ItemID);
+							await businessApiClient.DeleteRepositoryItem(repositoryID, repositoryItem.ItemID, businessID);
 						}
 					}
 
@@ -1952,7 +2226,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return Content(JsonConvert.SerializeObject(jsonContentResult), "application/json", Encoding.UTF8);
 		}
 
-		private async Task<ActionResult> VirtualFileDownload(DownloadResult downloadResult, string repositoryID, string fileName, string subDirectory = "")
+		private async Task<ActionResult> VirtualFileDownload(DownloadResult downloadResult, string repositoryID, string fileName, string subDirectory, string businessID)
 		{
 			ActionResult result;
 
@@ -1986,7 +2260,7 @@ namespace Qrame.Web.FileServer.Controllers
 			{
 				BlobContainerClient container = new BlobContainerClient(repository.AzureBlobConnectionString, repository.AzureBlobContainerID.ToLower());
 				await container.CreateIfNotExistsAsync(PublicAccessType.Blob);
-				string blobID = (string.IsNullOrEmpty(subDirectory) == false ? subDirectory + "/" : "") + fileName;
+				string blobID = (string.IsNullOrEmpty(businessID) == false ? businessID + "/" : "") + (string.IsNullOrEmpty(subDirectory) == false ? subDirectory + "/" : "") + fileName;
 				BlobClient blob = container.GetBlobClient(blobID);
 				if (await blob.ExistsAsync() == true)
 				{
@@ -2010,13 +2284,19 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 			else
 			{
+				string persistenceDirectoryPath = repository.PhysicalPath;
+				if (string.IsNullOrEmpty(businessID) == false)
+				{
+					persistenceDirectoryPath = Path.Combine(repository.PhysicalPath, businessID);
+				}
+
 				if (string.IsNullOrEmpty(subDirectory) == true)
 				{
-					repositoryManager.PersistenceDirectoryPath = repository.PhysicalPath;
+					repositoryManager.PersistenceDirectoryPath = persistenceDirectoryPath;
 				}
 				else
 				{
-					repositoryManager.PersistenceDirectoryPath = Path.Combine(repository.PhysicalPath, subDirectory);
+					repositoryManager.PersistenceDirectoryPath = Path.Combine(persistenceDirectoryPath, subDirectory);
 				}
 
 				var filePath = Path.Combine(repositoryManager.PersistenceDirectoryPath, fileName);
@@ -2061,7 +2341,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		private async Task<ActionResult> ExecuteBlobFileDownload(DownloadResult downloadResult, string repositoryID, string itemID)
+		private async Task<ActionResult> ExecuteBlobFileDownload(DownloadResult downloadResult, string repositoryID, string itemID, string businessID)
 		{
 			ActionResult result = NotFound();
 
@@ -2083,13 +2363,13 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			RepositoryItems repositoryItem = null;
-			if (StaticConfig.IsLocalDB == true)
+			if (StaticConfig.IsLocalTransactionDB == true)
 			{
-				repositoryItem = liteDBClient.Select<RepositoryItems>(p => p.ItemID == itemID).FirstOrDefault();
+				repositoryItem = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID && p.BusinessID == businessID).FirstOrDefault();
 			}
 			else
 			{
-				repositoryItem = await businessApiClient.GetRepositoryItem(repositoryID, itemID);
+				repositoryItem = await businessApiClient.GetRepositoryItem(repositoryID, itemID, businessID);
 			}
 
 			if (repositoryItem == null)
@@ -2100,7 +2380,7 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			RepositoryManager repositoryManager = new RepositoryManager();
-			string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
+			string relativeDirectoryPath = repositoryManager.GetRelativePath(repository, repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
 			string relativeDirectoryUrlPath = string.IsNullOrEmpty(relativeDirectoryPath) == true ? "/" : relativeDirectoryPath.Replace(@"\", "/");
 			relativeDirectoryUrlPath = relativeDirectoryUrlPath.Length <= 1 ? "" : relativeDirectoryUrlPath.Substring(relativeDirectoryUrlPath.Length - 1) == "/" ? relativeDirectoryUrlPath : relativeDirectoryUrlPath + "/";
 
@@ -2155,7 +2435,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		private async Task<ActionResult> ExecuteFileDownload(DownloadResult downloadResult, string repositoryID, string itemID)
+		private async Task<ActionResult> ExecuteFileDownload(DownloadResult downloadResult, string repositoryID, string itemID, string businessID)
 		{
 			ActionResult result = NotFound();
 
@@ -2177,13 +2457,13 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 
 			RepositoryItems repositoryItem = null;
-			if (StaticConfig.IsLocalDB == true)
+			if (StaticConfig.IsLocalTransactionDB == true)
 			{
-				repositoryItem = liteDBClient.Select<RepositoryItems>(p => p.ItemID == itemID).FirstOrDefault();
+				repositoryItem = liteDBClient.Select<RepositoryItems>(p => p.RepositoryID == repositoryID && p.ItemID == itemID && p.BusinessID == businessID).FirstOrDefault();
 			}
 			else
 			{
-				repositoryItem = await businessApiClient.GetRepositoryItem(repositoryID, itemID);
+				repositoryItem = await businessApiClient.GetRepositoryItem(repositoryID, itemID, businessID);
 			}
 
 			if (repositoryItem == null)
@@ -2247,7 +2527,7 @@ namespace Qrame.Web.FileServer.Controllers
 			return result;
 		}
 
-		// http://localhost:7004/api/FileManager/GetMimeType?path=test.json
+		// http://localhost:8004/api/FileManager/GetMimeType?path=test.json
 		[HttpGet("GetMimeType")]
 		public string GetMimeType(string path)
 		{
@@ -2277,7 +2557,7 @@ namespace Qrame.Web.FileServer.Controllers
 			}
 		}
 
-		// http://localhost:7004/api/FileManager/GetMD5Hash?value=s
+		// http://localhost:8004/api/FileManager/GetMD5Hash?value=s
 		[HttpGet("GetMD5Hash")]
 		public string GetMD5Hash(string value)
 		{

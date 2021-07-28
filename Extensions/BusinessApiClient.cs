@@ -74,7 +74,7 @@ namespace Qrame.Web.FileServer.Extensions
 			return result;
 		}
 
-		public async Task<RepositoryItems> GetRepositoryItem(string repositoryID, string itemID)
+		public async Task<RepositoryItems> GetRepositoryItem(string repositoryID, string itemID, string businessID)
 		{
 			RepositoryItems result = null;
 			try
@@ -82,7 +82,7 @@ namespace Qrame.Web.FileServer.Extensions
 				Repository repository = GetRepository(repositoryID);
 				if (repository != null)
 				{
-					var transactionInfo = string.IsNullOrEmpty(repository.TransactionGetItem) == true ? "QAF|SMW|SMP030|R02".Split("|") : repository.TransactionGetItem.Split("|");
+					var transactionInfo = string.IsNullOrEmpty(repository.TransactionGetItem) == true ? $"{StaticConfig.SystemCode}|SMW|SMP030|LD02".Split("|") : repository.TransactionGetItem.Split("|");
 					using (TransactionClient apiClient = new TransactionClient())
 					{
 						TransactionObject transactionObject = new TransactionObject();
@@ -96,6 +96,7 @@ namespace Qrame.Web.FileServer.Extensions
 						List<ServiceParameter> inputs = new List<ServiceParameter>();
 						inputs.Add("RepositoryID", repositoryID);
 						inputs.Add("ItemID", itemID);
+						inputs.Add("BusinessID", businessID);
 						transactionObject.Inputs.Add(inputs);
 
 						string requestID = "GetRepositoryItem" + DateTime.Now.ToString("yyyyMMddhhmmss");
@@ -126,7 +127,7 @@ namespace Qrame.Web.FileServer.Extensions
 		}
 
 
-		public async Task<List<RepositoryItems>> GetRepositoryItems(string repositoryID, string dependencyID, string itemID = "")
+		public async Task<List<RepositoryItems>> GetRepositoryItems(string repositoryID, string dependencyID, string businessID)
 		{
 			List<RepositoryItems> result = null;
 			try
@@ -134,7 +135,7 @@ namespace Qrame.Web.FileServer.Extensions
 				Repository repository = GetRepository(repositoryID);
 				if (repository != null)
 				{
-					var transactionInfo = string.IsNullOrEmpty(repository.TransactionGetItems) == true ? "QAF|SMW|SMP030|R03".Split("|") : repository.TransactionGetItems.Split("|");
+					var transactionInfo = string.IsNullOrEmpty(repository.TransactionGetItems) == true ? $"{StaticConfig.SystemCode}|SMW|SMP030|LD03".Split("|") : repository.TransactionGetItems.Split("|");
 					using (TransactionClient apiClient = new TransactionClient())
 					{
 						TransactionObject transactionObject = new TransactionObject();
@@ -148,7 +149,7 @@ namespace Qrame.Web.FileServer.Extensions
 						List<ServiceParameter> inputs = new List<ServiceParameter>();
 						inputs.Add("RepositoryID", repositoryID);
 						inputs.Add("DependencyID", dependencyID);
-						inputs.Add("ItemID", itemID);
+						inputs.Add("BusinessID", businessID);
 						transactionObject.Inputs.Add(inputs);
 
 						string requestID = "GetRepositoryItems" + DateTime.Now.ToString("yyyyMMddhhmmss");
@@ -174,7 +175,7 @@ namespace Qrame.Web.FileServer.Extensions
 			return result;
 		}
 
-		public async Task<bool> DeleteRepositoryItem(string repositoryID, string itemID)
+		public async Task<bool> DeleteRepositoryItem(string repositoryID, string itemID, string businessID)
 		{
 			bool result = false;
 
@@ -183,7 +184,7 @@ namespace Qrame.Web.FileServer.Extensions
 				Repository repository = GetRepository(repositoryID);
 				if (repository != null)
 				{
-					var transactionInfo = string.IsNullOrEmpty(repository.TransactionDeleteItem) == true ? "QAF|SMW|SMP030|D01".Split("|") : repository.TransactionDeleteItem.Split("|");
+					var transactionInfo = string.IsNullOrEmpty(repository.TransactionDeleteItem) == true ? $"{StaticConfig.SystemCode}|SMW|SMP030|DD01".Split("|") : repository.TransactionDeleteItem.Split("|");
 					using (TransactionClient apiClient = new TransactionClient())
 					{
 						TransactionObject transactionObject = new TransactionObject();
@@ -197,6 +198,7 @@ namespace Qrame.Web.FileServer.Extensions
 						List<ServiceParameter> inputs = new List<ServiceParameter>();
 						inputs.Add("RepositoryID", repositoryID);
 						inputs.Add("ItemID", itemID);
+						inputs.Add("BusinessID", businessID);
 						transactionObject.Inputs.Add(inputs);
 
 						string requestID = "DeleteRepositoryItem" + DateTime.Now.ToString("yyyyMMddhhmmss");
@@ -231,7 +233,7 @@ namespace Qrame.Web.FileServer.Extensions
 				Repository repository = GetRepository(repositoryItem.RepositoryID);
 				if (repository != null)
 				{
-					var transactionInfo = string.IsNullOrEmpty(repository.TransactionUpsertItem) == true ? "QAF|SMW|SMP030|M01".Split("|") : repository.TransactionUpsertItem.Split("|");
+					var transactionInfo = string.IsNullOrEmpty(repository.TransactionUpsertItem) == true ? $"{StaticConfig.SystemCode}|SMW|SMP030|MD01".Split("|") : repository.TransactionUpsertItem.Split("|");
 					using (TransactionClient apiClient = new TransactionClient())
 					{
 						TransactionObject transactionObject = new TransactionObject();
@@ -244,6 +246,7 @@ namespace Qrame.Web.FileServer.Extensions
 
 						List<ServiceParameter> inputs = new List<ServiceParameter>();
 						inputs.Add("ItemID", repositoryItem.ItemID);
+						inputs.Add("BusinessID", repositoryItem.BusinessID);
 						inputs.Add("RepositoryID", repositoryItem.RepositoryID);
 						inputs.Add("DependencyID", repositoryItem.DependencyID);
 						inputs.Add("FileName", repositoryItem.FileName);
@@ -297,7 +300,7 @@ namespace Qrame.Web.FileServer.Extensions
 				Repository repository = GetRepository(repositoryItem.RepositoryID);
 				if (repository != null)
 				{
-					var transactionInfo = string.IsNullOrEmpty(repository.TransactionUpdateDendencyID) == true ? "QAF|SMW|SMP030|U01".Split("|") : repository.TransactionUpdateDendencyID.Split("|");
+					var transactionInfo = string.IsNullOrEmpty(repository.TransactionUpdateDendencyID) == true ? $"{StaticConfig.SystemCode}|SMW|SMP030|UD01".Split("|") : repository.TransactionUpdateDendencyID.Split("|");
 					using (TransactionClient apiClient = new TransactionClient())
 					{
 						TransactionObject transactionObject = new TransactionObject();
@@ -311,6 +314,7 @@ namespace Qrame.Web.FileServer.Extensions
 						List<ServiceParameter> inputs = new List<ServiceParameter>();
 						inputs.Add("RepositoryID", repositoryItem.RepositoryID);
 						inputs.Add("ItemID", repositoryItem.ItemID);
+						inputs.Add("BusinessID", repositoryItem.BusinessID);
 						inputs.Add("SourceDependencyID", repositoryItem.DependencyID);
 						inputs.Add("TargetDependencyID", targetDependencyID);
 						transactionObject.Inputs.Add(inputs);
@@ -347,7 +351,7 @@ namespace Qrame.Web.FileServer.Extensions
 				Repository repository = GetRepository(repositoryItem.RepositoryID);
 				if (repository != null)
 				{
-					var transactionInfo = string.IsNullOrEmpty(repository.TransactionUpdateFileName) == true ? "QAF|SMW|SMP030|U02".Split("|") : repository.TransactionUpdateFileName.Split("|");
+					var transactionInfo = string.IsNullOrEmpty(repository.TransactionUpdateFileName) == true ? $"{StaticConfig.SystemCode}|SMW|SMP030|UD02".Split("|") : repository.TransactionUpdateFileName.Split("|");
 					using (TransactionClient apiClient = new TransactionClient())
 					{
 						TransactionObject transactionObject = new TransactionObject();
@@ -360,8 +364,8 @@ namespace Qrame.Web.FileServer.Extensions
 
 						List<ServiceParameter> inputs = new List<ServiceParameter>();
 						inputs.Add("RepositoryID", repositoryItem.RepositoryID);
-						inputs.Add("SourceItemID", sourceItemID);
-						inputs.Add("TargetItemID", repositoryItem.ItemID);
+						inputs.Add("ItemID", sourceItemID);
+						inputs.Add("BusinessID", repositoryItem.BusinessID);
 						inputs.Add("FileName", repositoryItem.FileName);
 						transactionObject.Inputs.Add(inputs);
 

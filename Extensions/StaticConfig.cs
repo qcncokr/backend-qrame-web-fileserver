@@ -35,10 +35,11 @@ namespace Qrame.Web.FileServer.Extensions
         public static int PurgeTokenTimeout = 120000;
         public static bool TokenGenerateIPCheck = false;
 		public static bool IsExceptionDetailText = false;
-		public static bool IsLocalDB = true;
-        public static bool IsApiFindServer = false;
+		public static bool IsLocalRepositoryDB = true;
+		public static bool IsLocalTransactionDB = true;
+		public static bool IsApiFindServer = false;
         public static JObject DomainAPIServer = null;
-		public static string WithOrigins = "";
+		public static List<string> WithOrigins = new List<string>();
         public static List<Repository> FileRepositorys = new List<Repository>();
 
 		public static StringBuilder BootstrappingVariables(IWebHostEnvironment environment)

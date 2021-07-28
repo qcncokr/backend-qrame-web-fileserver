@@ -11,6 +11,8 @@ namespace Qrame.Web.FileServer.Entities
         public string ItemID { get; set; }
         [JsonProperty("REPOSITORYID")]
         public string RepositoryID { get; set; }
+        [JsonProperty("BUSINESSID")]
+        public string BusinessID { get; set; }
         [JsonProperty("DEPENDENCYID")]
         public string DependencyID { get; set; }
         [JsonProperty("FILENAME")]

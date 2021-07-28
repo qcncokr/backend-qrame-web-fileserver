@@ -21,13 +21,13 @@ namespace Qrame.Web.FileServer.Extensions
 
 		int Upserts<T>(List<T> entity);
 
-		IEnumerable<T> Select<T>(Expression<Func<T, bool>> filter = null, Expression<Func<T, string>> ensureIndex = null, int skip = 0, int limit = int.MaxValue);
+		List<T> Select<T>(Expression<Func<T, bool>> filter, Expression<Func<T, string>> ensureIndex = null, int skip = 0, int limit = int.MaxValue);
 
 		int Delete<T>(Expression<Func<T, bool>> filter = null);
 
 		bool SetFileStorage(string key, string filePath, Stream stream = null);
 
-		LiteFileInfo GetFileStorage(string key, Stream stream);
+		LiteFileInfo<string> GetFileStorage(string key, Stream stream);
 
 		void ExportAll();
 

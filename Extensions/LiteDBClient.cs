@@ -1,18 +1,18 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Linq.Expressions;
-
 using LiteDB;
 
 using Microsoft.Extensions.Configuration;
 
 using Serilog;
 
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Linq.Expressions;
+
 namespace Qrame.Web.FileServer.Extensions
 {
-	public class LiteDBClient : ILiteDBClient
+    public class LiteDBClient : ILiteDBClient
 	{
 		private string connectionString = "";
 
@@ -26,7 +26,7 @@ namespace Qrame.Web.FileServer.Extensions
 			this.configuration = configuration;
 			var appSettings = configuration.GetSection("AppSettings");
 
-			connectionString = $"Filename={Path.Combine(StaticConfig.ContentRootPath, "fileserver.db;Mode=Shared;")}"; // Mode=Shared;
+			connectionString = $"Filename={Path.Combine(StaticConfig.ContentRootPath, "fileserver.db;")}";
 			string liteDBOptions = appSettings["LiteDBOptions"].ToString();
 			if (string.IsNullOrEmpty(liteDBOptions) == false)
 			{
@@ -158,9 +158,9 @@ namespace Qrame.Web.FileServer.Extensions
 			return result;
 		}
 
-		public IEnumerable<T> Select<T>(Expression<Func<T, bool>> filter = null, Expression<Func<T, string>> ensureIndex = null, int skip = 0, int limit = int.MaxValue)
+		public List<T> Select<T>(Expression<Func<T, bool>> filter, Expression<Func<T, string>> ensureIndex = null, int skip = 0, int limit = int.MaxValue)
 		{
-			IEnumerable<T> result = null;
+			List<T> result = null;
 
 			try
 			{
@@ -173,13 +173,9 @@ namespace Qrame.Web.FileServer.Extensions
 						collection.EnsureIndex(ensureIndex);
 					}
 
-					if (filter != null)
+					if (collection.Exists(filter) == true)
 					{
-						result = collection.Find(filter, skip, limit);
-					}
-					else
-					{
-						result = collection.FindAll();
+						result = collection.Find(filter, skip, limit).ToList();
 					}
 				}
 			}
@@ -191,29 +187,16 @@ namespace Qrame.Web.FileServer.Extensions
 			return result;
 		}
 
-		// PagedSelect<Repository>(Query.EQ("IsMultiUpload", true), "$.RepositoryName", 1);
-		// PagedSelect<Repository>(Query.EQ("IsMultiUpload", true), "$.RepositoryName", -1, 1, 10);
-		public IEnumerable<T> PagedSelect<T>(Query query, string orderByExpr, int order, int pageIndex = 0, int pageSize = int.MaxValue)
+		public List<BsonDocument> PagedSelect(string collectionName, int pageNumber = 0, int entriesPerPage = int.MaxValue)
 		{
-			var tmp = "tmp_" + Guid.NewGuid().ToString().Substring(0, 5);
-			var expr = new BsonExpression(orderByExpr);
-			var disk = new StreamDiskService(new MemoryStream(), true);
-			string collectionName = typeof(T).Name.ToLower();
 			using (var db = new LiteDatabase(connectionString))
-			using (var engine = new LiteEngine(disk, cacheSize: 200000))
 			{
-				engine.EnsureIndex(tmp, "orderBy", orderByExpr);
-				engine.InsertBulk(tmp, db.Engine.Find(collectionName, query).Select(x => new BsonDocument
-				{
-					["_id"] = x["_id"],
-					["orderBy"] = expr.Execute(x, true).First()
-				}));
-
-				var skip = pageIndex * pageSize;
-				var sorted = engine.Find(tmp, Query.All("orderBy", order), skip, pageSize);
-				var list = sorted.Select(x => db.Engine.FindById(collectionName, x["_id"])).Select(x => db.Mapper.ToObject<T>(x));
-
-				return list;
+				var col = db.GetCollection(collectionName);
+				var query = col.Query();
+				return query
+					.Limit(entriesPerPage)
+					.Offset((pageNumber - 1) * entriesPerPage)
+					.ToList();
 			}
 		}
 
@@ -229,11 +212,11 @@ namespace Qrame.Web.FileServer.Extensions
 
 					if (filter != null)
 					{
-						collection.Delete(filter);
+						collection.DeleteMany(filter);
 					}
 					else
 					{
-						collection.Delete(Query.All());
+						collection.DeleteAll();
 					}
 				}
 			}
@@ -251,7 +234,7 @@ namespace Qrame.Web.FileServer.Extensions
 
 			try
 			{
-				using (var db = new LiteRepository(connectionString))
+				using (var db = new LiteDatabase(connectionString))
 				{
 					if (stream == null)
 					{
@@ -270,13 +253,13 @@ namespace Qrame.Web.FileServer.Extensions
 			return result;
 		}
 
-		public LiteFileInfo GetFileStorage(string key, Stream stream)
+		public LiteFileInfo<string> GetFileStorage(string key, Stream stream)
 		{
-			LiteFileInfo result = null;
+			LiteFileInfo<string> result = null;
 
 			try
 			{
-				using (var db = new LiteRepository(connectionString))
+				using (var db = new LiteDatabase(connectionString))
 				{
 					result = db.FileStorage.Download(key, stream);
 				}
@@ -292,11 +275,11 @@ namespace Qrame.Web.FileServer.Extensions
 		{
 			using (var db = new LiteDatabase(connectionString))
 			{
-				foreach (string collectionName in db.Engine.GetCollectionNames())
+				foreach (string collectionName in db.GetCollectionNames())
 				{
 					try
 					{
-						IEnumerable<BsonDocument> backupCollection = db.Engine.FindAll(collectionName);
+						IEnumerable<BsonDocument> backupCollection = db.GetCollection(collectionName).FindAll();
 						if (backupCollection != null)
 						{
 							string exportFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{collectionName}.collection");
@@ -319,7 +302,7 @@ namespace Qrame.Web.FileServer.Extensions
 				{
 					string collectionName = typeof(T).Name.ToLower();
 					string exportFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{collectionName}.collection");
-					File.AppendAllText(exportFileName, JsonSerializer.Serialize(new BsonValue(db.Engine.FindAll(collectionName))));
+					File.AppendAllText(exportFileName, JsonSerializer.Serialize(new BsonValue(db.GetCollection(collectionName).FindAll())));
 				}
 				catch (Exception exception)
 				{
@@ -332,7 +315,7 @@ namespace Qrame.Web.FileServer.Extensions
 		{
 			using (var db = new LiteDatabase(connectionString))
 			{
-				foreach (string collectionName in db.Engine.GetCollectionNames())
+				foreach (string collectionName in db.GetCollectionNames())
 				{
 					string backupFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{collectionName}.backup");
 					string exportFileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"{collectionName}.collection");
@@ -342,8 +325,8 @@ namespace Qrame.Web.FileServer.Extensions
 						bool isDelete = false;
 						try
 						{
-							File.AppendAllText(backupFileName, JsonSerializer.Serialize(new BsonValue(db.Engine.FindAll(collectionName))));
-							db.Engine.Delete(collectionName, Query.All());
+							File.AppendAllText(backupFileName, JsonSerializer.Serialize(new BsonValue(db.GetCollection(collectionName).FindAll())));
+							db.GetCollection(collectionName).DeleteAll();
 							isDelete = true;
 
 							var bsonArray = JsonSerializer.Deserialize(File.ReadAllText(exportFileName));
@@ -352,7 +335,7 @@ namespace Qrame.Web.FileServer.Extensions
 							{
 								bsonDocuments.Add((BsonDocument)bsonValue);
 							}
-							db.Engine.InsertBulk(collectionName, bsonDocuments);
+							db.GetCollection(collectionName).InsertBulk(bsonDocuments);
 						}
 						catch (Exception exception)
 						{
@@ -366,7 +349,7 @@ namespace Qrame.Web.FileServer.Extensions
 								{
 									bsonDocuments.Add((BsonDocument)bsonValue);
 								}
-								db.Engine.InsertBulk(collectionName, bsonDocuments);
+								db.GetCollection(collectionName).InsertBulk(bsonDocuments);
 							}
 						}
 						finally
@@ -391,8 +374,8 @@ namespace Qrame.Web.FileServer.Extensions
 					bool isDelete = false;
 					try
 					{
-						File.AppendAllText(backupFileName, JsonSerializer.Serialize(new BsonValue(db.Engine.FindAll(collectionName))));
-						db.Engine.Delete(collectionName, Query.All());
+						File.AppendAllText(backupFileName, JsonSerializer.Serialize(new BsonValue(db.GetCollection(collectionName).FindAll())));
+						db.GetCollection(collectionName).DeleteAll();
 						isDelete = true;
 
 						var bsonArray = JsonSerializer.Deserialize(File.ReadAllText(exportFileName));
@@ -401,7 +384,7 @@ namespace Qrame.Web.FileServer.Extensions
 						{
 							bsonDocuments.Add((BsonDocument)bsonValue);
 						}
-						db.Engine.InsertBulk(collectionName, bsonDocuments);
+						db.GetCollection(collectionName).InsertBulk(bsonDocuments);
 					}
 					catch (Exception exception)
 					{
@@ -415,7 +398,7 @@ namespace Qrame.Web.FileServer.Extensions
 							{
 								bsonDocuments.Add((BsonDocument)bsonValue);
 							}
-							db.Engine.InsertBulk(collectionName, bsonDocuments);
+							db.GetCollection(collectionName).InsertBulk(bsonDocuments);
 						}
 					}
 					finally

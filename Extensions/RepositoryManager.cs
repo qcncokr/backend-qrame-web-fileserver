@@ -94,7 +94,7 @@ namespace Qrame.Web.FileServer.Extensions
         /// <param name="customPath2">두번째 우선순위인 추가 식별자입니다.</param>
         /// <param name="customPath3">세번째 우선순위인 추가 식별자입니다.</param>
         /// <returns></returns>
-        public string GetPhysicalPath(Repository repository, string customPath1 = "", string customPath2 = "", string customPath3 = "")
+        public string GetPhysicalPath(Repository repository, string businessID, string customPath1, string customPath2, string customPath3)
         {
             string result = "";
             if (repository.IsAutoPath.ParseBool() == true)
@@ -103,23 +103,23 @@ namespace Qrame.Web.FileServer.Extensions
                 switch (repository.PolicyPathID)
                 {
                     case "1": // 참조식별자+년도
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy") + directoryPathFlag;
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy") + directoryPathFlag;
                         break;
                     case "2": // 참조식별자+년월
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM") + directoryPathFlag;
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM") + directoryPathFlag;
                         break;
                     case "3": // 참조식별자+년월일
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM-dd") + directoryPathFlag;
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM-dd") + directoryPathFlag;
                         break;
                     default:
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3);
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3);
                         break;
                 }
                 result = Path.Combine(repository.PhysicalPath, dynamicPath);
             }
             else
             {
-                result = Path.Combine(repository.PhysicalPath, GetCustomFileStoragePath(customPath1, customPath2, customPath3));
+                result = Path.Combine(repository.PhysicalPath, GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3));
             }
 
             return result;
@@ -133,7 +133,7 @@ namespace Qrame.Web.FileServer.Extensions
         /// <param name="customPath2">두번째 우선순위인 추가 식별자입니다.</param>
         /// <param name="customPath3">세번째 우선순위인 추가 식별자입니다.</param>
         /// <returns></returns>
-        public string GetRelativePath(Repository repository, string customPath1 = "", string customPath2 = "", string customPath3 = "")
+        public string GetRelativePath(Repository repository, string businessID, string customPath1, string customPath2, string customPath3)
         {
             string result;
             if (repository.IsAutoPath.ParseBool() == true)
@@ -142,23 +142,23 @@ namespace Qrame.Web.FileServer.Extensions
                 switch (repository.PolicyPathID)
                 {
                     case "1": // 참조식별자+년도
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy") + directoryPathFlag;
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy") + directoryPathFlag;
                         break;
                     case "2": // 참조식별자+년월
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM") + directoryPathFlag;
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM") + directoryPathFlag;
                         break;
                     case "3": // 참조식별자+년월일
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM-dd") + directoryPathFlag;
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3) + DateTime.Now.ToString("yyyy-MM-dd") + directoryPathFlag;
                         break;
                     default:
-                        dynamicPath = GetCustomFileStoragePath(customPath1, customPath2, customPath3);
+                        dynamicPath = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3);
                         break;
                 }
                 result = dynamicPath;
             }
             else
             {
-                result = GetCustomFileStoragePath(customPath1, customPath2, customPath3);
+                result = GetCustomFileStoragePath(businessID, customPath1, customPath2, customPath3);
             }
 
             return result;
@@ -181,27 +181,32 @@ namespace Qrame.Web.FileServer.Extensions
             {
                 if (repository.IsAutoPath.ParseBool() == true)
                 {
-                    result = GetCustomUrlPath(repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3) + repositoryItem.PolicyPath;
+                    result = GetCustomUrlPath(repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3) + repositoryItem.PolicyPath;
                 }
                 else
                 {
-                    result = GetCustomUrlPath(repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
+                    result = GetCustomUrlPath(repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3);
                 }
             }
             else
             {
                 if (repository.IsAutoPath.ParseBool() == true)
                 {
-                    string dynamicPath = GetCustomFileStoragePath(repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3) + repositoryItem.PolicyPath;
+                    string dynamicPath = GetCustomFileStoragePath(repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3) + repositoryItem.PolicyPath;
                     result = Path.Combine(repository.PhysicalPath, dynamicPath);
                 }
                 else
                 {
-                    result = Path.Combine(repository.PhysicalPath, GetCustomFileStoragePath(repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3));
+                    result = Path.Combine(repository.PhysicalPath, GetCustomFileStoragePath(repositoryItem.BusinessID, repositoryItem.CustomPath1, repositoryItem.CustomPath2, repositoryItem.CustomPath3));
                 }
             }
 
             return result;
+        }
+
+        private Uri GetServiceSasUriForContainer(BlobContainerClient blobContainerClient, string storedPolicyName = null)
+        {
+            return GetServiceSasUriForContainer(blobContainerClient, DateTimeOffset.UtcNow.AddHours(1), storedPolicyName);
         }
 
         private Uri GetServiceSasUriForContainer(BlobContainerClient blobContainerClient, DateTimeOffset expiresOn, string storedPolicyName = null)
@@ -216,7 +221,7 @@ namespace Qrame.Web.FileServer.Extensions
 
                 if (storedPolicyName == null)
                 {
-                    sasBuilder.ExpiresOn = expiresOn == null ? DateTimeOffset.UtcNow.AddHours(1) : expiresOn;
+                    sasBuilder.ExpiresOn = expiresOn;
                     sasBuilder.SetPermissions(BlobSasPermissions.Read);
                 }
                 else
@@ -234,6 +239,11 @@ namespace Qrame.Web.FileServer.Extensions
             }
         }
 
+        private Uri GetServiceSasUriForBlob(BlobClient blobClient, string storedPolicyName = null)
+        {
+            return GetServiceSasUriForBlob(blobClient, DateTimeOffset.UtcNow.AddHours(1), storedPolicyName);
+        }
+
         private Uri GetServiceSasUriForBlob(BlobClient blobClient, DateTimeOffset expiresOn, string storedPolicyName = null)
         {
             if (blobClient.CanGenerateSasUri)
@@ -247,7 +257,7 @@ namespace Qrame.Web.FileServer.Extensions
 
                 if (storedPolicyName == null)
                 {
-                    sasBuilder.ExpiresOn = expiresOn == null ? DateTimeOffset.UtcNow.AddHours(1) : expiresOn;
+                    sasBuilder.ExpiresOn = expiresOn;
                     sasBuilder.SetPermissions(BlobSasPermissions.Read);
                 }
                 else
@@ -272,9 +282,14 @@ namespace Qrame.Web.FileServer.Extensions
         /// <param name="customPath2">두번째 우선순위인 추가 식별자입니다.</param>
         /// <param name="customPath3">세번째 우선순위인 추가 식별자입니다.</param>
         /// <returns>디렉토리 경로를 반환합니다.</returns>
-        public string GetCustomUrlPath(string customPath1, string customPath2, string customPath3)
+        public string GetCustomUrlPath(string businessID, string customPath1, string customPath2, string customPath3)
         {
             string result = "";
+
+            if (string.IsNullOrEmpty(businessID) == false)
+            {
+                result += businessID + "/";
+            }
 
             if (string.IsNullOrEmpty(customPath1) == false)
             {
@@ -301,9 +316,14 @@ namespace Qrame.Web.FileServer.Extensions
         /// <param name="customPath2">두번째 우선순위인 추가 식별자입니다.</param>
         /// <param name="customPath3">세번째 우선순위인 추가 식별자입니다.</param>
         /// <returns>디렉토리 경로를 반환합니다.</returns>
-        public string GetCustomFileStoragePath(string customPath1, string customPath2, string customPath3)
+        public string GetCustomFileStoragePath(string businessID, string customPath1, string customPath2, string customPath3)
         {
             string result = "";
+
+            if (string.IsNullOrEmpty(businessID) == false)
+            {
+                result += businessID + directoryPathFlag;
+            }
 
             if (string.IsNullOrEmpty(customPath1) == false)
             {
@@ -381,7 +401,12 @@ namespace Qrame.Web.FileServer.Extensions
                 string originalFileName = fileName;
                 int i = 0;
                 string extension = Path.GetExtension(fileName);
-                fileName = fileName.Replace(extension, "");
+
+                if (string.IsNullOrEmpty(extension) == false)
+                {
+                    fileName = fileName.Replace(extension, "");
+                }
+
                 FileInfo fileInfo;
                 do
                 {

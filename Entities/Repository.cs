@@ -27,6 +27,8 @@ namespace Qrame.Web.FileServer.Entities
         public string AzureBlobItemUrl { get; set; }
         [JsonProperty("ISVIRTUALPATH")]
         public string IsVirtualPath { get; set; }
+        [JsonProperty("ISFILEUPLOADDOWNLOADONLY")]
+        public string IsFileUploadDownloadOnly { get; set; }
         [JsonProperty("ISMULTIUPLOAD")]
         public string IsMultiUpload { get; set; }
         [JsonProperty("ISFILEOVERWRITE")]
@@ -39,8 +41,6 @@ namespace Qrame.Web.FileServer.Entities
         public string PolicyPathID { get; set; }
         [JsonProperty("UPLOADTYPEID")]
         public string UploadTypeID { get; set; }
-        [JsonProperty("UPLOADTYPE")]
-        public string UploadType { get; set; }
         [JsonProperty("UPLOADEXTENSIONS")]
         public string UploadExtensions { get; set; }
         [JsonProperty("UPLOADCOUNT")]
@@ -61,9 +61,10 @@ namespace Qrame.Web.FileServer.Entities
         public string TransactionUpsertItem { get; set; }
         [JsonProperty("TRANSACTIONUPDATEDENDENCYID")]
         public string TransactionUpdateDendencyID { get; set; }
-
         [JsonProperty("TRANSACTIONUPDATEFILENAME")]
         public string TransactionUpdateFileName { get; set; }
+        [JsonProperty("WITHORIGINYN")]
+        public bool WithOriginYN { get; set; }
         [JsonProperty("USEYN")]
         public string UseYN { get; set; }
         [JsonProperty("DESCRIPTION")]
